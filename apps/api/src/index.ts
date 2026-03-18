@@ -5,6 +5,8 @@ import { bodyLimit } from 'hono/body-limit';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 import videosRoutes from './modules/videos/videos.routes';
+import { createFactory } from 'hono/factory';
+import { honoFactory } from './shared/hono-factory';
 type CorsConfig = Parameters<typeof cors>[0];
 export const corsConfig: CorsConfig = {
 	origin: (origin) => {
@@ -31,5 +33,8 @@ app.get('/', (c) => {
 	return c.text('Hello Hono!');
 });
 
-app.route('/videos', videosRoutes);
+const api = honoFactory.createApp();
+api.route('/videos', videosRoutes);
+
+app.route('/api', api);
 export default app;

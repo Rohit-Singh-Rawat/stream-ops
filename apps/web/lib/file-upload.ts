@@ -4,10 +4,15 @@ const PART_CONCURRENCY = 5
 const MAX_PART_RETRIES = 3
 const RETRY_BASE_DELAY_MS = 500
 
-type SingleUploadDescriptor = { uploadUrl: string }
+type SingleUploadDescriptor = {
+  type: 'single'
+  uploadUrl: string
+  key: string
+}
 type MultipartUploadDescriptor = {
   type: 'multipart'
   uploadId: string
+  key: string
   partSize: number
   parts: Array<{ partNumber: number; uploadUrl: string }>
 }
@@ -28,6 +33,12 @@ export interface UploadResult {
   fileName: string
 }
 
+type UploadSession = {
+  fileId: string
+  key: string
+  multipart?: { uploadId: string }
+}
+
 function uploadPartOnce(params: {
   url: string
   body: ArrayBuffer
@@ -43,7 +54,7 @@ function uploadPartOnce(params: {
     }
 
     const xhr = new XMLHttpRequest()
-    
+
     const onAbort = () => {
       xhr.abort()
       reject(new DOMException('Upload aborted', 'AbortError'))
@@ -129,11 +140,11 @@ export async function uploadFile(file: File, options: UploadOptions = {}): Promi
     signal.addEventListener('abort', onParentAbort, { once: true })
   }
 
-  let createdFileId: string | undefined
+  let session: UploadSession | undefined
 
   try {
     const { file: createdFile, upload: uploadDesc } = await api.post<InitiateUploadResponse>(
-      '/api/files/upload',
+      '/api/videos/upload-url',
       {
         name: file.name,
         mimeType: file.type || 'application/octet-stream',
@@ -142,9 +153,9 @@ export async function uploadFile(file: File, options: UploadOptions = {}): Promi
       }
     )
 
-    createdFileId = createdFile.id
+    session = { fileId: createdFile.id, key: uploadDesc.key }
 
-    if ('uploadUrl' in uploadDesc) {
+    if (uploadDesc.type === 'single') {
       await uploadPartWithRetry({
         url: uploadDesc.uploadUrl,
         body: await file.arrayBuffer(),
@@ -152,10 +163,10 @@ export async function uploadFile(file: File, options: UploadOptions = {}): Promi
         signal: abortController.signal,
         onProgress: (loaded) => onProgress?.(loaded),
       })
-      await api.post(`/api/files/${createdFile.id}/confirm`)
     } else {
+      session = { ...session, multipart: { uploadId: uploadDesc.uploadId } }
       const partProgress = new Array<number>(uploadDesc.parts.length).fill(0)
-      
+
       const reportProgress = (i: number, loaded: number) => {
         partProgress[i] = loaded
         const totalLoaded = partProgress.reduce((acc, bytes) => acc + bytes, 0)
@@ -177,7 +188,8 @@ export async function uploadFile(file: File, options: UploadOptions = {}): Promi
 
       const etags = await runConcurrent(tasks, PART_CONCURRENCY)
 
-      await api.post(`/api/files/${createdFile.id}/complete`, {
+      await api.post(`/api/videos/complete`, {
+        key: uploadDesc.key,
         uploadId: uploadDesc.uploadId,
         parts: uploadDesc.parts.map((p, i) => ({ partNumber: p.partNumber, etag: etags[i] })),
       })
@@ -187,8 +199,10 @@ export async function uploadFile(file: File, options: UploadOptions = {}): Promi
   } catch (err) {
     abortController.abort()
 
-    if (createdFileId) {
-      api.post(`/api/files/${createdFileId}/abort`).catch(() => undefined)
+    if (session?.multipart) {
+      api
+        .post('/api/videos/abort', { key: session.key, uploadId: session.multipart.uploadId })
+        .catch(() => undefined)
     }
 
     throw err instanceof Error ? err : new Error('Unknown error during upload')

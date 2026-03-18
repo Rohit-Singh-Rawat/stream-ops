@@ -19,7 +19,6 @@ import { env } from './env';
 
 const s3 = new S3Client({
 	region: env.AWS_REGION,
-	endpoint: env.S3_ENDPOINT,
 	requestChecksumCalculation: 'WHEN_REQUIRED',
 	responseChecksumValidation: 'WHEN_REQUIRED',
 	credentials: {

@@ -6,14 +6,28 @@ import { logger } from '../../utils/logger';
 import { HTTP_INTERNAL_SERVER_ERROR } from '../../lib/constants';
 
 const uploadUrlRequestSchema = z.object({
-	filename: z.string().min(1),
-	contentType: z
+	name: z.string().min(1),
+	mimeType: z
 		.string()
 		.min(1)
 		.refine((value) => value.startsWith('video/'), {
 			message: 'Content type must start with "video/"',
 		}),
 	size: z.number().min(1),
+	folderId: z.string().min(1).nullable().optional(),
+});
+
+const completeUploadSchema = z.object({
+	key: z.string().min(1),
+	uploadId: z.string().min(1),
+	parts: z
+		.array(z.object({ partNumber: z.number().int().min(1), etag: z.string().min(1) }))
+		.min(1),
+});
+
+const abortUploadSchema = z.object({
+	key: z.string().min(1),
+	uploadId: z.string().min(1),
 });
 
 export class VideosController {
@@ -35,10 +49,10 @@ export class VideosController {
 		customZValidator('json', uploadUrlRequestSchema),
 		async (ctx) => {
 			try {
-				const { filename, contentType, size } = ctx.req.valid('json');
-				const result = await this.videosService.getuploadurl({
-					filename,
-					contentType,
+				const { name, mimeType, size } = ctx.req.valid('json');
+				const result = await this.videosService.initiateUpload({
+					name,
+					mimeType,
 					size,
 					createdAt: new Date(),
 					updatedAt: new Date(),
@@ -50,6 +64,38 @@ export class VideosController {
 					error: error instanceof Error ? error.message : String(error),
 				});
 				return ctx.json({ error: 'Failed to generate upload URL' }, HTTP_INTERNAL_SERVER_ERROR);
+			}
+		}
+	);
+
+	public completeUploadHandler = honoFactory.createHandlers(
+		customZValidator('json', completeUploadSchema),
+		async (ctx) => {
+			try {
+				const { key, uploadId, parts } = ctx.req.valid('json');
+				await this.videosService.completeUpload({ key, uploadId, parts });
+				return ctx.json({ ok: true });
+			} catch (error) {
+				logger.error('Failed to complete upload', {
+					error: error instanceof Error ? error.message : String(error),
+				});
+				return ctx.json({ error: 'Failed to complete upload' }, HTTP_INTERNAL_SERVER_ERROR);
+			}
+		}
+	);
+
+	public abortUploadHandler = honoFactory.createHandlers(
+		customZValidator('json', abortUploadSchema),
+		async (ctx) => {
+			try {
+				const { key, uploadId } = ctx.req.valid('json');
+				await this.videosService.abortUpload({ key, uploadId });
+				return ctx.json({ ok: true });
+			} catch (error) {
+				logger.error('Failed to abort upload', {
+					error: error instanceof Error ? error.message : String(error),
+				});
+				return ctx.json({ error: 'Failed to abort upload' }, HTTP_INTERNAL_SERVER_ERROR);
 			}
 		}
 	);
