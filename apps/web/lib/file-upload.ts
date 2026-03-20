@@ -186,12 +186,12 @@ export async function uploadFile(file: File, options: UploadOptions = {}): Promi
         })
       })
 
-      const etags = await runConcurrent(tasks, PART_CONCURRENCY)
+      await runConcurrent(tasks, PART_CONCURRENCY)
 
+      // Complete uses ListParts on the server — browser PUT to S3 does not expose ETag under default CORS.
       await api.post(`/api/videos/complete`, {
         key: uploadDesc.key,
         uploadId: uploadDesc.uploadId,
-        parts: uploadDesc.parts.map((p, i) => ({ partNumber: p.partNumber, etag: etags[i] })),
       })
     }
 
