@@ -86,11 +86,7 @@ export class VideosService {
 		};
 	}
 
-	public async completeUpload(params: {
-		key: string;
-		uploadId: string;
-		parts: Array<{ partNumber: number; etag: string }>;
-	}): Promise<void> {
+	public async completeUpload(params: { key: string; uploadId: string }): Promise<void> {
 		await completeMultipartUpload(params);
 	}
 

@@ -20,9 +20,6 @@ const uploadUrlRequestSchema = z.object({
 const completeUploadSchema = z.object({
 	key: z.string().min(1),
 	uploadId: z.string().min(1),
-	parts: z
-		.array(z.object({ partNumber: z.number().int().min(1), etag: z.string().min(1) }))
-		.min(1),
 });
 
 const abortUploadSchema = z.object({
@@ -72,8 +69,8 @@ export class VideosController {
 		customZValidator('json', completeUploadSchema),
 		async (ctx) => {
 			try {
-				const { key, uploadId, parts } = ctx.req.valid('json');
-				await this.videosService.completeUpload({ key, uploadId, parts });
+				const { key, uploadId } = ctx.req.valid('json');
+				await this.videosService.completeUpload({ key, uploadId });
 				return ctx.json({ ok: true });
 			} catch (error) {
 				logger.error('Failed to complete upload', {

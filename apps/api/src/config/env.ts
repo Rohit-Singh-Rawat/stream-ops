@@ -4,7 +4,8 @@ const envSchema = z.object({
 	AWS_REGION: z.string(),
 	AWS_ACCESS_KEY_ID: z.string(),
 	AWS_SECRET_ACCESS_KEY: z.string(),
-	S3_BUCKET: z.string(),
+	INPUT_BUCKET: z.string().min(1),
+	OUTPUT_BUCKET: z.string().min(1),
 	QUEUE_URL: z.string().url(),
 	PORT: z.coerce.number().default(4000),
 });
