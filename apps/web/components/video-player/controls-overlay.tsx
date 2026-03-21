@@ -14,10 +14,11 @@ interface ControlsProps {
   isControlsVisible: boolean;
   title?: string;
   description?: string;
+  vttUrl?: string;
   onBack?: () => void;
 }
 
-export function ControlsOverlay({ videoRef, containerRef, isControlsVisible, title, description, onBack }: ControlsProps) {
+export function ControlsOverlay({ videoRef, containerRef, isControlsVisible, title, description, vttUrl, onBack }: ControlsProps) {
   const { isPlaying, isMuted, volume, isFullscreen, duration, togglePlay, toggleMute, toggleFullscreen, skip, setVolume } = useVideo(videoRef, containerRef);
   
   const [currentTime, setCurrentTime] = useState(0);
@@ -80,7 +81,7 @@ export function ControlsOverlay({ videoRef, containerRef, isControlsVisible, tit
         </div>
 
         <div className="mb-4">
-          <ProgressBar videoRef={videoRef} />
+          <ProgressBar videoRef={videoRef} vttUrl={vttUrl} />
         </div>
 
         <div className="flex items-center justify-between">

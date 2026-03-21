@@ -1,10 +1,14 @@
 import fs from 'fs';
 import path from 'path';
-import { runFFmpeg } from './src/ffmpeg';
-import { logEvent } from './src/logger';
-import { pollQueue } from './src/queue';
-import { downloadFile, uploadDirectory } from './src/s3';
-import { jobWorkspaceDirName } from './src/storageLayout';
+import { logEvent } from './src/infra/logger';
+import { pollQueue } from './src/infra/queue';
+import { downloadFile } from './src/infra/s3';
+import { jobWorkspaceDirName } from './src/paths';
+import { runHlsEncode, uploadHlsPackage } from './src/pipeline/hlsPipeline';
+import {
+	runThumbnailVttGeneration,
+	uploadThumbnailVttPackage,
+} from './src/pipeline/thumbnailVttPipeline';
 
 const outputBucket = process.env.OUTPUT_BUCKET;
 
@@ -13,15 +17,6 @@ if (!process.env.INPUT_BUCKET?.trim()) {
 }
 if (!outputBucket) {
 	throw new Error('OUTPUT_BUCKET is not set');
-}
-
-function outputKeyPrefixForTranscode(objectKey: string, videoId: string): string {
-	const normalized = objectKey.replace(/\\/g, '/');
-	const parent = path.posix.dirname(normalized);
-	if (parent === '.' || parent === '') {
-		return `hls/${videoId}`;
-	}
-	return `${parent}/hls`;
 }
 
 function removeWorkDir(dir: string): boolean {
@@ -52,6 +47,9 @@ pollQueue(async (job) => {
 		const videoId = jobWorkspaceDirName(key);
 		const baseDir = `/tmp/${videoId}`;
 		const outputDir = `${baseDir}/hls`;
+		const thumbnailsDir = path.join(baseDir, 'thumbnails');
+		const spritePath = path.join(thumbnailsDir, 'sprite.jpg');
+		const vttPath = path.join(thumbnailsDir, 'thumbnails.vtt');
 
 		try {
 			fs.mkdirSync(baseDir, { recursive: true });
@@ -62,12 +60,24 @@ pollQueue(async (job) => {
 			const inputPath = await downloadFile(bucket, key, baseDir);
 			logEvent({ step: 'download_complete', videoId, key });
 
-			await runFFmpeg(inputPath, outputDir);
-			logEvent({ step: 'transcoding_complete', videoId });
+			await runHlsEncode({ inputPath, outputDir, videoId });
+			await runThumbnailVttGeneration({
+				inputPath,
+				thumbnailsDir,
+				spritePath,
+				vttPath,
+				objectKey: key,
+				videoId,
+			});
 
-			const prefix = outputKeyPrefixForTranscode(key, videoId);
-			await uploadDirectory(outputBucket, outputDir, prefix);
-			logEvent({ step: 'upload_complete', videoId, outputBucket, prefix });
+			await uploadHlsPackage({ outputDir, outputBucket, objectKey: key, videoId });
+			await uploadThumbnailVttPackage({
+				spritePath,
+				vttPath,
+				outputBucket,
+				objectKey: key,
+				videoId,
+			});
 		} catch (err) {
 			logEvent({
 				step: 'source_failed',

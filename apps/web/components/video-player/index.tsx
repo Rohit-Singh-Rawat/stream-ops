@@ -11,11 +11,12 @@ export interface VideoPlayerProps {
   title?: string;
   description?: string;
   poster?: string;
+  vttUrl?: string;
   onBack?: () => void;
   className?: string;
 }
 
-export default function VideoPlayer({ src, title, description, poster, onBack, className }: VideoPlayerProps) {
+export default function VideoPlayer({ src, title, description, poster, vttUrl, onBack, className }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
@@ -161,6 +162,7 @@ export default function VideoPlayer({ src, title, description, poster, onBack, c
         isControlsVisible={isControlsVisible}
         title={title}
         description={description}
+        vttUrl={vttUrl}
         onBack={onBack}
       />
     </div>

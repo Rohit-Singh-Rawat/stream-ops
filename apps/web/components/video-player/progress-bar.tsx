@@ -1,18 +1,33 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { formatTime } from './utils';
+import { formatTime, parseVtt, type Cue } from './utils';
 
 interface ProgressBarProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
+  vttUrl?: string;
 }
 
-export function ProgressBar({ videoRef }: ProgressBarProps) {
+export function ProgressBar({ videoRef, vttUrl }: ProgressBarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [hoverPercent, setHoverPercent] = useState<number | null>(null);
   const [duration, setDuration] = useState(0);
+  const [cues, setCues] = useState<Cue[]>([]);
+  const [hoverPreview, setHoverPreview] = useState<{
+    left: number;
+    cue: Cue;
+    time: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!vttUrl) return;
+    fetch(vttUrl)
+      .then((res) => res.text())
+      .then((text) => setCues(parseVtt(text, vttUrl)))
+      .catch(console.error);
+  }, [vttUrl]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -82,16 +97,36 @@ export function ProgressBar({ videoRef }: ProgressBarProps) {
   }, [videoRef]);
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (isScrubbing) return;
     const container = containerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
     const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    setHoverPercent(percent);
+    
+    if (!isScrubbing) {
+      setHoverPercent(percent);
+    }
+    
+    const d = videoRef.current?.duration || duration;
+    if (d > 0 && cues.length > 0) {
+      const hoverTime = percent * d;
+      const cue = cues.find(c => hoverTime >= c.start && hoverTime < c.end);
+      if (cue) {
+        setHoverPreview({
+          left: percent * rect.width, // absolute px position inside the container
+          cue,
+          time: hoverTime
+        });
+      } else {
+        setHoverPreview(null);
+      }
+    }
   };
 
   const handlePointerLeave = () => {
-    if (!isScrubbing) setHoverPercent(null);
+    if (!isScrubbing) {
+      setHoverPercent(null);
+      setHoverPreview(null);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -137,14 +172,33 @@ export function ProgressBar({ videoRef }: ProgressBarProps) {
         <div className="absolute right-0 top-1/2 -mt-1.5 h-3 w-3 translate-x-1/2 rounded-full bg-primary opacity-0 transition-opacity duration-200 group-hover:opacity-100 shadow-[0_0_10px_rgba(0,0,0,0.5)]" />
       </div>
 
-      {hoverPercent !== null && duration > 0 && (
+      {hoverPreview ? (
         <div 
-          className="absolute bottom-6 -translate-x-1/2 rounded bg-black/80 px-2 py-1 text-xs font-medium text-white shadow"
+          className="absolute bottom-6 -translate-x-1/2 rounded flex flex-col items-center shadow-lg pointer-events-none"
+          style={{ left: `${hoverPreview.left}px` }}
+        >
+          <div
+            className="rounded overflow-hidden mb-1 border border-white/20 bg-black"
+            style={{
+              width: hoverPreview.cue.w,
+              height: hoverPreview.cue.h,
+              backgroundImage: `url(${hoverPreview.cue.image})`,
+              backgroundPosition: `-${hoverPreview.cue.x}px -${hoverPreview.cue.y}px`,
+              backgroundRepeat: "no-repeat",
+            }}
+          />
+          <div className="bg-black/80 px-2 py-0.5 text-xs font-medium text-white shadow rounded">
+            {formatTime(hoverPreview.time)}
+          </div>
+        </div>
+      ) : hoverPercent !== null && duration > 0 ? (
+        <div 
+          className="absolute bottom-6 -translate-x-1/2 rounded bg-black/80 px-2 py-1 text-xs font-medium text-white shadow pointer-events-none"
           style={{ left: `${hoverPercent * 100}%` }}
         >
           {formatTime(hoverPercent * duration)}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

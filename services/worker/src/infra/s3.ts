@@ -12,7 +12,61 @@ import { readFile, readdir } from 'fs/promises';
 import path from 'path';
 import type { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
-import { resolveVideoInputExtension } from './inputExtension';
+
+const ALLOWED_EXTENSIONS = new Set([
+	'.mp4',
+	'.m4v',
+	'.mov',
+	'.mkv',
+	'.webm',
+	'.avi',
+	'.mpeg',
+	'.mpg',
+	'.m2ts',
+	'.ts',
+]);
+
+const CONTENT_TYPE_TO_EXT: Readonly<Record<string, string>> = {
+	'video/mp4': '.mp4',
+	'video/quicktime': '.mov',
+	'video/x-matroska': '.mkv',
+	'video/webm': '.webm',
+	'video/x-msvideo': '.avi',
+	'video/mpeg': '.mpeg',
+	'application/mp4': '.mp4',
+};
+
+function resolveVideoInputExtension(key: string, contentType?: string | null): string {
+	const fromKey = extensionFromKeyBasename(key);
+	if (fromKey && ALLOWED_EXTENSIONS.has(fromKey)) {
+		return fromKey;
+	}
+
+	const normalizedType = contentType?.split(';')[0]?.trim().toLowerCase();
+	if (normalizedType) {
+		const fromType = CONTENT_TYPE_TO_EXT[normalizedType];
+		if (fromType) {
+			return fromType;
+		}
+	}
+
+	throw new Error(
+		[
+			'Cannot infer container extension for transcode input.',
+			`Key suffix must be one of: ${[...ALLOWED_EXTENSIONS].join(', ')}`,
+			`or S3 Content-Type must be mapped (got: ${contentType ?? 'none'}).`,
+		].join(' '),
+	);
+}
+
+function extensionFromKeyBasename(key: string): string | null {
+	const base = key.split('/').filter(Boolean).pop() ?? '';
+	const dot = base.lastIndexOf('.');
+	if (dot <= 0 || dot === base.length - 1) {
+		return null;
+	}
+	return `.${base.slice(dot + 1).toLowerCase()}`;
+}
 
 const s3 = new S3Client({
 	region: process.env.AWS_REGION,
@@ -85,6 +139,23 @@ function toObjectKey(prefix: string, relativePath: string): string {
 	return normalizedPrefix.length > 0
 		? `${normalizedPrefix}/${relativePosix}`
 		: relativePosix;
+}
+
+export async function uploadFile(
+	bucket: string,
+	localPath: string,
+	key: string,
+	contentType: string,
+): Promise<void> {
+	const body = await readFile(localPath);
+	await s3.send(
+		new PutObjectCommand({
+			Bucket: bucket,
+			Key: key,
+			Body: body,
+			ContentType: contentType,
+		}),
+	);
 }
 
 export async function uploadDirectory(
