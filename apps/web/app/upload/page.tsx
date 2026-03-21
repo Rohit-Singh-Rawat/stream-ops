@@ -16,16 +16,16 @@ function UploadProgressCard({ upload }: { upload: UploadItem }) {
 
   return (
     <div 
-      className="flex items-center gap-4 p-4 rounded-2xl bg-card text-card-foreground border border-border shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300 ease-out"
+      className="flex items-center gap-4 p-4 rounded-[1.25rem] bg-card border border-border shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300 ease-out"
       role="status"
       aria-live="polite"
     >
       <div 
         className={cn(
-          "h-10 w-10 flex-shrink-0 rounded-xl flex items-center justify-center transition-colors duration-300 ease-out",
-          isCompleted ? "bg-primary/20 text-primary" :
-          isFailed ? "bg-destructive/20 text-destructive" :
-          "bg-primary/10 text-primary"
+          "h-10 w-10 flex-shrink-0 rounded-full flex items-center justify-center transition-colors duration-200 ease-out",
+          isCompleted ? "bg-primary text-primary-foreground" :
+          isFailed ? "bg-destructive text-destructive-foreground" :
+          "bg-secondary text-secondary-foreground"
         )}
       >
         {isCompleted ? (
@@ -37,27 +37,27 @@ function UploadProgressCard({ upload }: { upload: UploadItem }) {
         )}
       </div>
       
-      <div className="flex-1 min-w-0">
-        <div className="flex justify-between items-baseline mb-1.5">
+      <div className="flex-1 min-w-0 py-0.5">
+        <div className="flex justify-between items-baseline mb-2">
           <p className="text-sm font-medium text-foreground truncate pr-2" title={upload.name}>
             {upload.name}
           </p>
-          <span className="text-xs font-semibold text-muted-foreground tabular-nums">
+          <span className="text-xs font-medium text-muted-foreground tabular-nums">
             {progressPercent}%
           </span>
         </div>
         
-        <div className="w-full bg-secondary rounded-full h-1.5 mb-1.5 overflow-hidden">
+        <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden isolate relative">
           <div 
             className={cn(
-              "h-full rounded-full transition-all duration-300 ease-out",
+              "absolute inset-y-0 left-0 w-full rounded-full transition-transform duration-200 ease-out origin-left will-change-transform",
               isCompleted ? "bg-primary" : isFailed ? "bg-destructive" : "bg-primary"
             )}
-            style={{ width: `${progressPercent}%` }}
+            style={{ transform: `scaleX(${progressPercent / 100})` }}
           />
         </div>
         
-        <div className="text-xs font-medium text-muted-foreground capitalize flex justify-between">
+        <div className="mt-2 text-xs font-medium text-muted-foreground capitalize flex justify-between">
           <span>{(upload.size / (1024 * 1024)).toFixed(1)} MB</span>
           <span>{upload.status}</span>
         </div>
@@ -71,9 +71,6 @@ function UploadDropzone({ activeUpload, onFilesDrop }: { activeUpload?: UploadIt
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const isUploading = activeUpload?.status === 'uploading'
-  const progressPercent = activeUpload && activeUpload.size > 0 
-    ? Math.min(Math.round((activeUpload.progress / activeUpload.size) * 100), 100) 
-    : 0
 
   const handleDragOver = useCallback((e: DragEvent) => {
     e.preventDefault()
@@ -111,70 +108,53 @@ function UploadDropzone({ activeUpload, onFilesDrop }: { activeUpload?: UploadIt
   }, [isUploading])
 
   return (
-    <div 
-      className="relative rounded-[2.5rem] p-[4px] overflow-hidden transition-all duration-300 ease-out shadow-lg group isolate"
-      style={{
-        background: isUploading
-          ? `conic-gradient(from 0deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.5) ${progressPercent}%, transparent ${progressPercent}%)`
-          : 'transparent',
-      }}
+    <div
+      role="button"
+      tabIndex={isUploading ? -1 : 0}
+      aria-label="Upload video file"
+      aria-disabled={isUploading}
+      className={cn(
+        "relative w-full group flex flex-col items-center justify-center p-10 text-center transition-all duration-200 ease-out",
+        "border border-dashed rounded-[2rem]",
+        isUploading 
+          ? "border-border/50 bg-secondary/20 cursor-not-allowed opacity-60" 
+          : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/50 cursor-pointer active:scale-[0.97]",
+        isDragging && !isUploading ? "border-primary bg-primary/5 scale-[0.99]" : "",
+        !isUploading ? "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" : ""
+      )}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onClick={() => !isUploading && fileInputRef.current?.click()}
+      onKeyDown={handleKeyDown}
     >
-      <div 
-        className={cn(
-          "absolute inset-0 -z-10 transition-colors duration-300 ease-out",
-          isUploading ? "bg-transparent" : "bg-border/50"
-        )} 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="video/mp4,video/webm"
+        className="hidden"
+        onChange={handleFileChange}
+        disabled={isUploading}
+        aria-hidden="true"
       />
-      <div
-        role="button"
-        tabIndex={isUploading ? -1 : 0}
-        aria-label="Upload video file"
-        aria-disabled={isUploading}
-        className={cn(
-          "relative z-10 bg-card rounded-[calc(2.5rem-4px)] flex flex-col items-center justify-center py-20 px-8 text-center transition-all duration-300 ease-out origin-center",
-          isUploading ? "cursor-not-allowed opacity-90" : "cursor-pointer active:scale-[0.98] group-hover:bg-accent/50",
-          isDragging ? "bg-accent/80 border-transparent scale-[0.98]" : "",
-          !isUploading ? "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" : ""
-        )}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => !isUploading && fileInputRef.current?.click()}
-        onKeyDown={handleKeyDown}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="video/mp4,video/webm"
-          className="hidden"
-          onChange={handleFileChange}
-          disabled={isUploading}
-          aria-hidden="true"
-        />
-        
-        <div className="relative mb-8">
-          <div className={cn(
-            "absolute inset-0 flex items-center justify-center -z-10 transition-all duration-300 ease-out pointer-events-none scale-[2]",
-            isDragging ? "opacity-20 text-primary scale-[2.2]" : "opacity-5 text-foreground"
-          )}>
-            <HugeiconsIcon icon={VideoReplayIcon} size={100} aria-hidden="true" />
-          </div>
-          
-          <div className={cn(
-            "h-16 w-16 rounded-2xl flex items-center justify-center text-primary-foreground shadow-xl transition-all duration-300 ease-out",
-            isDragging ? "bg-primary scale-110 shadow-primary/30" : "bg-primary shadow-primary/20 group-hover:scale-[1.03] group-hover:-translate-y-1 group-hover:shadow-primary/30"
-          )}>
-            <HugeiconsIcon icon={Upload01Icon} size={28} aria-hidden="true" />
-          </div>
+      
+      <div className="relative mb-5">
+        <div className={cn(
+          "h-14 w-14 rounded-[1.15rem] flex items-center justify-center transition-all duration-200 ease-out will-change-transform",
+          isUploading ? "bg-secondary text-muted-foreground" : 
+          isDragging ? "bg-primary text-primary-foreground scale-[1.05]" : 
+          "bg-secondary text-secondary-foreground group-hover:scale-[1.05] group-hover:bg-primary group-hover:text-primary-foreground group-hover:shadow-sm"
+        )}>
+          <HugeiconsIcon icon={Upload01Icon} size={28} aria-hidden="true" />
         </div>
-        
-        <h3 className="text-base font-semibold text-card-foreground mb-1">
-          Select or drop video
-        </h3>
-        <p className="text-sm text-muted-foreground max-w-[260px] leading-relaxed">
-          Supports MP4 and WebM formats up to 2GB
-        </p>
       </div>
+      
+      <h3 className="text-base font-medium text-foreground mb-1.5">
+        {isDragging ? "Drop video here" : "Select or drop video"}
+      </h3>
+      <p className="text-sm text-muted-foreground max-w-[260px] text-balance">
+        Supports MP4 and WebM formats up to 2GB
+      </p>
     </div>
   )
 }
@@ -192,20 +172,22 @@ export default function UploadPage() {
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-background p-4 md:p-8">
-      <div className="w-full max-w-md mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out" aria-labelledby="upload-heading">
-        <header className="flex flex-col items-center text-center space-y-2">
-          <div className="inline-flex items-center justify-center p-3 bg-card rounded-2xl shadow-sm mb-2 border border-border transition-transform duration-300 hover:scale-105 ease-out">
+      <div className="w-full max-w-md mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-300 ease-out" aria-labelledby="upload-heading">
+        <header className="flex flex-col items-center text-center space-y-3">
+          <div className="inline-flex items-center justify-center p-3 bg-secondary/50 rounded-xl mb-1 transition-transform duration-200 ease-out">
             <HugeiconsIcon icon={VideoReplayIcon} size={24} className="text-foreground" />
           </div>
-          <h1 id="upload-heading" className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
-            Upload Media
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Securely upload your video assets
-          </p>
+          <div className="space-y-1">
+            <h1 id="upload-heading" className="text-2xl font-semibold tracking-tight text-foreground">
+              Upload Media
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Securely upload your video assets for processing
+            </p>
+          </div>
         </header>
 
-        <section className="space-y-6">
+        <section className="space-y-4">
           <UploadDropzone activeUpload={activeUpload} onFilesDrop={handleFilesDrop} />
           {activeUpload && <UploadProgressCard upload={activeUpload} />}
         </section>
