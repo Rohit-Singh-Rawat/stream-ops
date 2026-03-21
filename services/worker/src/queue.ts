@@ -1,7 +1,12 @@
 import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 
-export interface TranscodeJobMessage {
+export interface SourceObject {
+	bucket: string;
 	key: string;
+}
+
+export interface TranscodeJobMessage {
+	sources: SourceObject[];
 }
 
 const sqs = new SQSClient({
@@ -27,17 +32,36 @@ function decodeS3Key(key: string) {
 	return decodeURIComponent(key.replace(/\+/g, ' '));
 }
 
-function parseJob(body: unknown): TranscodeJobMessage | null {
+function parseJob(body: unknown): SourceObject[] | null {
 	if (body === null || typeof body !== 'object') {
 		return null;
 	}
-	const event = body as {
-		key?: unknown;
-		Records?: unknown[];
+	const event = body as Record<string, unknown>;
+
+	const out: SourceObject[] = [];
+	const seen = new Set<string>();
+
+	const push = (bucket: string, key: string) => {
+		const dedupe = `${bucket}\0${key}`;
+		if (seen.has(dedupe)) {
+			return;
+		}
+		seen.add(dedupe);
+		out.push({ bucket, key });
 	};
 
+	if (typeof event.bucket === 'string' && event.bucket.trim() && typeof event.key === 'string' && event.key.length > 0) {
+		push(event.bucket.trim(), decodeS3Key(event.key));
+		return out.length > 0 ? out : null;
+	}
+
 	if (typeof event.key === 'string' && event.key.length > 0) {
-		return { key: decodeS3Key(event.key) };
+		const fallback = process.env.INPUT_BUCKET?.trim();
+		if (!fallback) {
+			return null;
+		}
+		push(fallback, decodeS3Key(event.key));
+		return out.length > 0 ? out : null;
 	}
 
 	if (!Array.isArray(event.Records)) {
@@ -50,18 +74,17 @@ function parseJob(body: unknown): TranscodeJobMessage | null {
 		}
 		try {
 			const { s3 } = record as { s3: { bucket: { name: string }; object: { key: string } } };
-			const {
-				object: { key },
-			} = s3;
-			if (key) {
-				return { key: decodeS3Key(key) };
+			const name = s3.bucket?.name;
+			const key = s3.object?.key;
+			if (typeof name === 'string' && name.length > 0 && typeof key === 'string' && key.length > 0) {
+				push(name, decodeS3Key(key));
 			}
 		} catch {
 			continue;
 		}
 	}
 
-	return null;
+	return out.length > 0 ? out : null;
 }
 
 function isS3TestEvent(body: unknown): boolean {
@@ -96,13 +119,13 @@ export async function pollQueue(handler: (job: TranscodeJobMessage) => Promise<v
 					continue;
 				}
 
-				const job = parseJob(body);
-				if (!job) {
+				const sources = parseJob(body);
+				if (!sources?.length) {
 					await deleteMessage(receiptHandle);
 					continue;
 				}
 
-				await handler(job);
+				await handler({ sources });
 				await deleteMessage(receiptHandle);
 			} catch (err) {
 				console.error('Worker error:', err);

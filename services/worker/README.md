@@ -14,11 +14,11 @@ bun run index.ts
 
 ## Environment
 
-| Variable | Purpose |
-|----------|---------|
-| `INPUT_BUCKET` | Bucket for **source** objects; worker runs `GetObject` here using the key from the queue message. |
-| `OUTPUT_BUCKET` | Bucket for **transcoded** HLS (uploads after FFmpeg). |
-| `QUEUE_URL` | SQS queue URL. |
+| Variable        | Purpose                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| `INPUT_BUCKET`  | Required. Used for `{ "key" }`-only messages. S3 `Records` use **each record’s bucket** for `GetObject`. |
+| `OUTPUT_BUCKET` | Bucket for **transcoded** HLS (uploads after FFmpeg).                                             |
+| `QUEUE_URL`     | SQS queue URL.                                                                                    |
 
 Use the same `INPUT_BUCKET` / `OUTPUT_BUCKET` names as the API (`apps/api`).
 

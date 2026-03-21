@@ -17,8 +17,6 @@ import { resolveVideoInputExtension } from './inputExtension';
 const s3 = new S3Client({
 	region: process.env.AWS_REGION,
 	forcePathStyle: true,
-	// Default is WHEN_SUPPORTED (more checksums / aws-chunked). WHEN_REQUIRED + buffer bodies
-	// avoids MalformedTrailerError on some endpoints. (DISABLED is not in this SDK’s types.)
 	requestChecksumCalculation: RequestChecksumCalculation.WHEN_REQUIRED,
 	responseChecksumValidation: ResponseChecksumValidation.WHEN_REQUIRED,
 	credentials: {
@@ -46,8 +44,6 @@ export async function downloadFile(bucket: string, key: string, destDir: string)
 			Key: key,
 		}),
 	);
-
-	console.log(`S3 GetObject response ContentType: ${res.ContentType}, ContentLength: ${res.ContentLength}`);
 
 	const ext = resolveVideoInputExtension(key, res.ContentType);
 	const destPath = path.join(destDir, `source${ext}`);

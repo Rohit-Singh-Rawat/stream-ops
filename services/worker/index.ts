@@ -1,21 +1,19 @@
 import fs from 'fs';
 import path from 'path';
 import { runFFmpeg } from './src/ffmpeg';
+import { logEvent } from './src/logger';
 import { pollQueue } from './src/queue';
 import { downloadFile, uploadDirectory } from './src/s3';
 import { jobWorkspaceDirName } from './src/storageLayout';
 
-const inputBucket = process.env.INPUT_BUCKET;
 const outputBucket = process.env.OUTPUT_BUCKET;
 
-if (!inputBucket) {
+if (!process.env.INPUT_BUCKET?.trim()) {
 	throw new Error('INPUT_BUCKET is not set');
 }
 if (!outputBucket) {
 	throw new Error('OUTPUT_BUCKET is not set');
 }
-
-console.log('Worker started...');
 
 function outputKeyPrefixForTranscode(objectKey: string, videoId: string): string {
 	const normalized = objectKey.replace(/\\/g, '/');
@@ -26,29 +24,62 @@ function outputKeyPrefixForTranscode(objectKey: string, videoId: string): string
 	return `${parent}/hls`;
 }
 
-pollQueue(async (job) => {
-	const { key } = job;
-
-	if (key.includes('/hls/') || key.startsWith('hls/')) {
-		console.log(`Skipping HLS output path to avoid loop: ${key}`);
-		return;
+function removeWorkDir(dir: string): boolean {
+	try {
+		fs.rmSync(dir, { recursive: true, force: true });
+		return true;
+	} catch (err) {
+		logEvent({
+			step: 'cleanup_failed',
+			dir,
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return false;
 	}
+}
 
-	const videoId = jobWorkspaceDirName(key);
-	const baseDir = `/tmp/${videoId}`;
-	const outputDir = `${baseDir}/hls`;
+logEvent({ step: 'worker_started' });
 
-	fs.mkdirSync(baseDir, { recursive: true });
-	fs.mkdirSync(outputDir, { recursive: true });
+pollQueue(async (job) => {
+	for (const source of job.sources) {
+		const { bucket, key } = source;
 
-	const inputPath = await downloadFile(inputBucket, key, baseDir);
+		if (key.includes('/hls/') || key.startsWith('hls/')) {
+			logEvent({ step: 'source_skipped', key, reason: 'hls_output_path' });
+			continue;
+		}
 
-	console.log('Running FFmpeg...');
+		const videoId = jobWorkspaceDirName(key);
+		const baseDir = `/tmp/${videoId}`;
+		const outputDir = `${baseDir}/hls`;
 
-	await runFFmpeg(inputPath, outputDir);
+		try {
+			fs.mkdirSync(baseDir, { recursive: true });
+			fs.mkdirSync(outputDir, { recursive: true });
 
-	const prefix = outputKeyPrefixForTranscode(key, videoId);
-	await uploadDirectory(outputBucket, outputDir, prefix);
+			logEvent({ step: 'source_started', videoId, bucket, key });
 
-	console.log('Transcode and upload finished');
+			const inputPath = await downloadFile(bucket, key, baseDir);
+			logEvent({ step: 'download_complete', videoId, key });
+
+			await runFFmpeg(inputPath, outputDir);
+			logEvent({ step: 'transcoding_complete', videoId });
+
+			const prefix = outputKeyPrefixForTranscode(key, videoId);
+			await uploadDirectory(outputBucket, outputDir, prefix);
+			logEvent({ step: 'upload_complete', videoId, outputBucket, prefix });
+		} catch (err) {
+			logEvent({
+				step: 'source_failed',
+				videoId,
+				key,
+				error: err instanceof Error ? err.message : String(err),
+			});
+			throw err;
+		} finally {
+			if (removeWorkDir(baseDir)) {
+				logEvent({ step: 'cleanup_complete', videoId });
+			}
+		}
+	}
 });

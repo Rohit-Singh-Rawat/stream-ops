@@ -22,7 +22,6 @@ const CONTENT_TYPE_TO_EXT: Readonly<Record<string, string>> = {
 };
 
 export function resolveVideoInputExtension(key: string, contentType?: string | null): string {
-	console.log(`Resolving video input extension for key: ${key}, contentType: ${contentType}`);
 	const fromKey = extensionFromKeyBasename(key);
 	if (fromKey && ALLOWED_EXTENSIONS.has(fromKey)) {
 		return fromKey;
