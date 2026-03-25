@@ -20,6 +20,10 @@ import { env } from './env';
 
 const s3 = new S3Client({
 	region: env.AWS_REGION,
+	...(env.AWS_ENDPOINT_URL && {
+		endpoint: env.AWS_ENDPOINT_URL,
+		forcePathStyle: true,
+	}),
 	requestChecksumCalculation: 'WHEN_REQUIRED',
 	responseChecksumValidation: 'WHEN_REQUIRED',
 	credentials: {

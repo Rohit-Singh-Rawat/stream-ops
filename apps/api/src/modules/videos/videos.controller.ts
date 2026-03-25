@@ -3,18 +3,21 @@ import { honoFactory } from '../../shared/hono-factory';
 import { customZValidator } from '../../shared/zod-validator';
 import { z } from 'zod';
 import { logger } from '../../utils/logger';
-import { HTTP_INTERNAL_SERVER_ERROR } from '../../lib/constants';
+import { HTTP_INTERNAL_SERVER_ERROR, HTTP_NOT_FOUND } from '../../lib/constants';
 
-const uploadUrlRequestSchema = z.object({
+const idParamSchema = z.object({
+	id: z.string().uuid(),
+});
+
+const createVideoSchema = z.object({
 	name: z.string().min(1),
-	mimeType: z
+	size: z.number().min(1),
+	type: z
 		.string()
 		.min(1)
 		.refine((value) => value.startsWith('video/'), {
-			message: 'Content type must start with "video/"',
+			message: 'type must be a video/* MIME type',
 		}),
-	size: z.number().min(1),
-	folderId: z.string().min(1).nullable().optional(),
 });
 
 const completeUploadSchema = z.object({
@@ -42,25 +45,72 @@ export class VideosController {
 		return VideosController.instance;
 	}
 
-	public getUploadUrlHandler = honoFactory.createHandlers(
-		customZValidator('json', uploadUrlRequestSchema),
+	public createVideoHandler = honoFactory.createHandlers(
+		customZValidator('json', createVideoSchema),
 		async (ctx) => {
 			try {
-				const { name, mimeType, size } = ctx.req.valid('json');
-				const result = await this.videosService.initiateUpload({
-					name,
-					mimeType,
-					size,
-					createdAt: new Date(),
-					updatedAt: new Date(),
-				});
-
+				const { name, size, type } = ctx.req.valid('json');
+				const result = await this.videosService.createVideo({ name, size, type });
 				return ctx.json(result);
 			} catch (error) {
-				logger.error('Failed to get upload URL', {
+				logger.error('Failed to create video', {
 					error: error instanceof Error ? error.message : String(error),
 				});
-				return ctx.json({ error: 'Failed to generate upload URL' }, HTTP_INTERNAL_SERVER_ERROR);
+				return ctx.json({ error: 'Failed to create video' }, HTTP_INTERNAL_SERVER_ERROR);
+			}
+		}
+	);
+
+	public getVideoHandler = honoFactory.createHandlers(
+		customZValidator('param', idParamSchema),
+		async (ctx) => {
+			try {
+				const { id } = ctx.req.valid('param');
+				const video = await this.videosService.getVideoById(id);
+				if (!video) {
+					return ctx.json({ error: 'Not found' }, HTTP_NOT_FOUND);
+				}
+				return ctx.json({ video });
+			} catch (error) {
+				logger.error('Failed to get video', {
+					error: error instanceof Error ? error.message : String(error),
+				});
+				return ctx.json({ error: 'Failed to get video' }, HTTP_INTERNAL_SERVER_ERROR);
+			}
+		}
+	);
+
+	public presignUploadHandler = honoFactory.createHandlers(
+		customZValidator('param', idParamSchema),
+		async (ctx) => {
+			try {
+				const { id } = ctx.req.valid('param');
+				const result = await this.videosService.presignUpload(id);
+				if (!result) {
+					return ctx.json({ error: 'Not found' }, HTTP_NOT_FOUND);
+				}
+				return ctx.json(result);
+			} catch (error) {
+				logger.error('Failed to presign upload', {
+					error: error instanceof Error ? error.message : String(error),
+				});
+				return ctx.json({ error: 'Failed to presign upload' }, HTTP_INTERNAL_SERVER_ERROR);
+			}
+		}
+	);
+
+	public queueTranscodeHandler = honoFactory.createHandlers(
+		customZValidator('param', idParamSchema),
+		async (ctx) => {
+			try {
+				const { id } = ctx.req.valid('param');
+				await this.videosService.queueTranscode(id);
+				return ctx.json({ ok: true });
+			} catch (error) {
+				logger.error('Failed to queue transcode', {
+					error: error instanceof Error ? error.message : String(error),
+				});
+				return ctx.json({ error: 'Failed to queue transcode' }, HTTP_INTERNAL_SERVER_ERROR);
 			}
 		}
 	);
@@ -97,5 +147,3 @@ export class VideosController {
 		}
 	);
 }
-
-export const getUploadUrlHandler = VideosController.getInstance().getUploadUrlHandler;

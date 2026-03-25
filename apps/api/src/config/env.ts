@@ -4,6 +4,7 @@ const envSchema = z.object({
 	AWS_REGION: z.string(),
 	AWS_ACCESS_KEY_ID: z.string(),
 	AWS_SECRET_ACCESS_KEY: z.string(),
+	AWS_ENDPOINT_URL: z.string().url().optional(),
 	INPUT_BUCKET: z.string().min(1),
 	OUTPUT_BUCKET: z.string().min(1),
 	QUEUE_URL: z.string().url(),

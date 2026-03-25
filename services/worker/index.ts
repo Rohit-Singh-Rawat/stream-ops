@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { db, eq, videos } from '@stream-ops/db';
 import { logEvent } from './src/infra/logger';
 import { pollQueue } from './src/infra/queue';
 import { downloadFile } from './src/infra/s3';
@@ -57,6 +58,8 @@ pollQueue(async (job) => {
 
 			logEvent({ step: 'source_started', videoId, bucket, key });
 
+			await db.update(videos).set({ status: 'processing' }).where(eq(videos.id, videoId));
+
 			const inputPath = await downloadFile(bucket, key, baseDir);
 			logEvent({ step: 'download_complete', videoId, key });
 
@@ -78,7 +81,12 @@ pollQueue(async (job) => {
 				objectKey: key,
 				videoId,
 			});
+
+			await db.update(videos).set({ status: 'ready' }).where(eq(videos.id, videoId));
 		} catch (err) {
+			try {
+				await db.update(videos).set({ status: 'failed' }).where(eq(videos.id, videoId));
+			} catch {}
 			logEvent({
 				step: 'source_failed',
 				videoId,

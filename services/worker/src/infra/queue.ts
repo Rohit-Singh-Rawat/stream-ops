@@ -11,6 +11,7 @@ export interface TranscodeJobMessage {
 
 const sqs = new SQSClient({
 	region: process.env.AWS_REGION,
+	...(process.env.AWS_ENDPOINT_URL && { endpoint: process.env.AWS_ENDPOINT_URL }),
 	credentials: {
 		accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
 		secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
@@ -103,7 +104,13 @@ export async function pollQueue(handler: (job: TranscodeJobMessage) => Promise<v
 	});
 
 	while (true) {
-		const res = await sqs.send(receive);
+		let res;
+		try {
+			res = await sqs.send(receive);
+		} catch (err) {
+			console.error('SQS receive failed:', err);
+			continue;
+		}
 		const messages = res.Messages;
 		if (!messages?.length) {
 			continue;

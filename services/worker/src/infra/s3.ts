@@ -70,7 +70,11 @@ function extensionFromKeyBasename(key: string): string | null {
 
 const s3 = new S3Client({
 	region: process.env.AWS_REGION,
-	forcePathStyle: true,
+	...(process.env.AWS_ENDPOINT_URL && {
+		endpoint: process.env.AWS_ENDPOINT_URL,
+		forcePathStyle: true,
+	}),
+	...(!process.env.AWS_ENDPOINT_URL && { forcePathStyle: true }),
 	requestChecksumCalculation: RequestChecksumCalculation.WHEN_REQUIRED,
 	responseChecksumValidation: ResponseChecksumValidation.WHEN_REQUIRED,
 	credentials: {

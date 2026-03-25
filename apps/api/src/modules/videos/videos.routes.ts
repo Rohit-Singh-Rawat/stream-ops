@@ -5,7 +5,10 @@ const videosController = VideosController.getInstance();
 
 const videosRoutes = honoFactory
 	.createApp()
-	.post('/upload-url', ...videosController.getUploadUrlHandler)
+	.post('/', ...videosController.createVideoHandler)
+	.get('/:id', ...videosController.getVideoHandler)
+	.post('/:id/presign-upload', ...videosController.presignUploadHandler)
+	.post('/:id/queue', ...videosController.queueTranscodeHandler)
 	.post('/complete', ...videosController.completeUploadHandler)
 	.post('/abort', ...videosController.abortUploadHandler);
 
