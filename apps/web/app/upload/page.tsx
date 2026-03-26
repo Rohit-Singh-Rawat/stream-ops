@@ -1,7 +1,10 @@
 'use client'
 
-import { useState, useCallback, useRef, type DragEvent, type KeyboardEvent, type ChangeEvent } from 'react'
-import { startUploadProcess, useUploads, type UploadItem } from '@/store/uploads'
+import { useState, useCallback, useRef, useTransition, type DragEvent, type KeyboardEvent, type ChangeEvent } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
+import { uploadFile } from '@/lib/file-upload'
+import { uploadStore, useUploads, type UploadItem } from '@/store/uploads'
 import { Upload01Icon, CheckmarkCircle01Icon, Cancel01Icon, VideoReplayIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { cn } from '@/lib/utils'
@@ -22,7 +25,7 @@ function UploadProgressCard({ upload }: { upload: UploadItem }) {
     >
       <div 
         className={cn(
-          "h-10 w-10 flex-shrink-0 rounded-full flex items-center justify-center transition-colors duration-200 ease-out",
+          "h-10 w-10 shrink-0 rounded-full flex items-center justify-center transition-colors duration-200 ease-out",
           isCompleted ? "bg-primary text-primary-foreground" :
           isFailed ? "bg-destructive text-destructive-foreground" :
           "bg-secondary text-secondary-foreground"
@@ -162,13 +165,40 @@ function UploadDropzone({ activeUpload, onFilesDrop }: { activeUpload?: UploadIt
 export default function UploadPage() {
   const uploads = useUploads()
   const activeUpload = uploads.length > 0 ? uploads[uploads.length - 1] : undefined
+  const router = useRouter()
+  const [, startTransition] = useTransition()
 
-  const handleFilesDrop = useCallback((files: FileList) => {
-    const file = files[0]
-    if (file) {
-      startUploadProcess(file, null)
-    }
-  }, [])
+  const uploadMutation = useMutation({
+    mutationFn: async (vars: { file: File; tempId: string; folderId: string | null }) => {
+      return uploadFile(vars.file, {
+        folderId: vars.folderId,
+        onProgress: (loaded) => uploadStore.updateProgress(vars.tempId, loaded),
+      })
+    },
+    onSuccess: ({ fileId, fileName }, vars) => {
+      const fileSize = vars.file.size
+      uploadStore.remove(vars.tempId)
+      uploadStore.add({ id: fileId, name: fileName, size: fileSize })
+      uploadStore.updateProgress(fileId, fileSize)
+      uploadStore.updateStatus(fileId, 'completed')
+      startTransition(() => router.push(`/videos/${fileId}`))
+      setTimeout(() => uploadStore.remove(fileId), 3_000)
+    },
+    onError: (_err, vars) => {
+      uploadStore.updateStatus(vars.tempId, 'failed')
+    },
+  })
+
+  const handleFilesDrop = useCallback(
+    (files: FileList) => {
+      const file = files[0]
+      if (!file) return
+      const tempId = crypto.randomUUID()
+      uploadStore.add({ id: tempId, name: file.name, size: file.size })
+      uploadMutation.mutate({ file, folderId: null, tempId })
+    },
+    [uploadMutation],
+  )
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-background p-4 md:p-8">

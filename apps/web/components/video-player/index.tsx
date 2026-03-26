@@ -20,6 +20,7 @@ export default function VideoPlayer({ src, title, description, poster, vttUrl, o
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
+  const [isMediaReady, setIsMediaReady] = useState(false);
   const hideControlsTimeoutRef = useRef<NodeJS.Timeout>(null);
   const { togglePlay, toggleMute, toggleFullscreen, skip, isFullscreen } = useVideo(videoRef, containerRef);
 
@@ -27,6 +28,13 @@ export default function VideoPlayer({ src, title, description, poster, vttUrl, o
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    setIsMediaReady(false);
+
+    const onLoaded = () => setIsMediaReady(true);
+    const onError = () => setIsMediaReady(false);
+    video.addEventListener('loadeddata', onLoaded);
+    video.addEventListener('error', onError);
 
     let hls: Hls | null = null;
     
@@ -42,6 +50,8 @@ export default function VideoPlayer({ src, title, description, poster, vttUrl, o
     }
 
     return () => {
+      video.removeEventListener('loadeddata', onLoaded);
+      video.removeEventListener('error', onError);
       if (hls) {
         hls.destroy();
       }
@@ -147,7 +157,10 @@ export default function VideoPlayer({ src, title, description, poster, vttUrl, o
     >
       <video
         ref={videoRef}
-        className="w-full h-full object-contain"
+        className={cn(
+          'w-full h-full object-contain transition-opacity duration-300 ease-out',
+          isMediaReady ? 'opacity-100' : 'opacity-0',
+        )}
         poster={poster}
         playsInline
         onClick={(e) => {

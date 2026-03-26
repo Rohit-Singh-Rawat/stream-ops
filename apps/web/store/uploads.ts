@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from 'react'
-import { uploadFile, type UploadOptions } from '@/lib/file-upload'
 
 export type UploadStatus = 'uploading' | 'completed' | 'failed'
 
@@ -66,30 +65,4 @@ export const uploadStore = new UploadStore()
 
 export function useUploads() {
   return useSyncExternalStore(uploadStore.subscribe, uploadStore.getAll, uploadStore.getAll)
-}
-
-export async function startUploadProcess(file: File, folderId: string | null = null) {
-  const tempId = crypto.randomUUID()
-  
-  uploadStore.add({ id: tempId, name: file.name, size: file.size })
-
-  try {
-    const result = await uploadFile(file, {
-      folderId,
-      onProgress: (loaded) => uploadStore.updateProgress(tempId, loaded),
-    })
-    
-    const existing = uploadStore.getById(tempId)
-    if (existing) {
-      uploadStore.remove(tempId)
-      uploadStore.add({ id: result.fileId, name: result.fileName, size: existing.size })
-      uploadStore.updateProgress(result.fileId, existing.size)
-      uploadStore.updateStatus(result.fileId, 'completed')
-
-      setTimeout(() => uploadStore.remove(result.fileId), 3000)
-    }
-  } catch (error) {
-    uploadStore.updateStatus(tempId, 'failed')
-    console.error(`Upload failed for ${file.name}:`, error)
-  }
 }

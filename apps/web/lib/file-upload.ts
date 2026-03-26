@@ -17,8 +17,22 @@ type MultipartUploadDescriptor = {
   parts: Array<{ partNumber: number; uploadUrl: string }>
 }
 
-type InitiateUploadResponse = {
-  file: { id: string; name: string; size: number }
+type VideoSummary = {
+  id: string
+  name: string
+  size: number
+  type: string
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+type CreateVideoResponse = {
+  video: VideoSummary
+}
+
+type PresignUploadResponse = {
+  video: VideoSummary
   upload: SingleUploadDescriptor | MultipartUploadDescriptor
 }
 
@@ -143,17 +157,21 @@ export async function uploadFile(file: File, options: UploadOptions = {}): Promi
   let session: UploadSession | undefined
 
   try {
-    const { file: createdFile, upload: uploadDesc } = await api.post<InitiateUploadResponse>(
-      '/api/videos/upload-url',
-      {
-        name: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        size: file.size,
-        ...(folderId ? { folderId } : {}),
-      }
+    const mime =
+      file.type && file.type.startsWith('video/') ? file.type : 'video/mp4'
+
+    const { video: created } = await api.post<CreateVideoResponse>('/api/videos', {
+      name: file.name,
+      size: file.size,
+      type: mime,
+      ...(folderId ? { folderId } : {}),
+    })
+
+    const { upload: uploadDesc } = await api.post<PresignUploadResponse>(
+      `/api/videos/${created.id}/presign-upload`
     )
 
-    session = { fileId: createdFile.id, key: uploadDesc.key }
+    session = { fileId: created.id, key: uploadDesc.key }
 
     if (uploadDesc.type === 'single') {
       await uploadPartWithRetry({
@@ -163,6 +181,7 @@ export async function uploadFile(file: File, options: UploadOptions = {}): Promi
         signal: abortController.signal,
         onProgress: (loaded) => onProgress?.(loaded),
       })
+      await api.post(`/api/videos/${created.id}/queue`)
     } else {
       session = { ...session, multipart: { uploadId: uploadDesc.uploadId } }
       const partProgress = new Array<number>(uploadDesc.parts.length).fill(0)
@@ -195,7 +214,7 @@ export async function uploadFile(file: File, options: UploadOptions = {}): Promi
       })
     }
 
-    return { fileId: createdFile.id, fileName: file.name }
+    return { fileId: created.id, fileName: file.name }
   } catch (err) {
     abortController.abort()
 
