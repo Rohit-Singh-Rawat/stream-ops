@@ -1,26 +1,35 @@
 {
 	"name": "@stream-ops/db",
-	"module": "index.ts",
+	"version": "0.0.0",
 	"type": "module",
 	"private": true,
 	"scripts": {
-		"db:generate": "drizzle-kit generate",
-		"db:migrate": "drizzle-kit migrate",
 		"db:push": "drizzle-kit push",
-		"db:studio": "drizzle-kit studio"
+		"db:generate": "drizzle-kit generate",
+		"db:studio": "drizzle-kit studio",
+		"db:migrate": "drizzle-kit migrate"
+	},
+	"exports": {
+		".": "./index.ts",
+		"./schema": "./schema.ts"
+	},
+	"typesVersions": {
+		"*": {
+			"schema": ["schema.ts"],
+			"*": ["index.ts"]
+		}
 	},
 	"devDependencies": {
 		"@types/bun": "latest",
+		"@types/node": "^22.19.11",
 		"@types/pg": "^8.20.0",
 		"drizzle-kit": "^0.31.10",
-		"tsx": "^4.21.0"
-	},
-	"peerDependencies": {
-		"typescript": "^5"
+		"tsx": "^4.21.0",
+		"typescript": "5.9.2"
 	},
 	"dependencies": {
 		"dotenv": "^17.3.1",
 		"drizzle-orm": "^0.45.1",
-		"pg": "^8.20.0"
+		"pg": "^8.18.0"
 	}
 }
