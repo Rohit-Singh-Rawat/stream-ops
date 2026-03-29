@@ -4,6 +4,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:db": "docker compose up -d postgres db-migrate && turbo run dev",
+    "docker:db":"docker compose up -d postgres db-migrate",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types"
@@ -11,6 +13,7 @@
   "devDependencies": {
     "prettier": "^3.7.4",
     "turbo": "^2.8.17",
+    "turbo-windows-64": "2.8.17",
     "typescript": "5.9.2"
   },
   "engines": {

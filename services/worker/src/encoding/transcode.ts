@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 
 // ffmpeg works in pipelines, each video stream is a separate pipeline
 
@@ -8,6 +8,8 @@ import { spawn } from 'child_process';
  */
 export function runFFmpeg(inputPath: string, outputDir: string): Promise<void> {
 	return new Promise((resolve, reject) => {
+		const hasAudio = inputHasAudioStream(inputPath);
+
 		const args = [
 			'-y', // overwrite existing outputs
 
@@ -23,11 +25,10 @@ export function runFFmpeg(inputPath: string, outputDir: string): Promise<void> {
 				'[v3]scale=w=854:h=480[v3out]',
 			].join(';'),
 
-			// stream 0: 1080p libx264 + optional input audio
+			// stream 0: 1080p libx264 (+audio if present)
 			'-map',
 			'[v1out]', // map the 1080p scaled video stream
-			'-map',
-			'0:a?', // map audio from input (optional, ? means no error if missing)
+			...(hasAudio ? ['-map', '0:a:0'] : []), // map source audio only when present
 			'-c:v:0',
 			'libx264', // use H.264 codec for first video stream
 			'-b:v:0',
@@ -37,11 +38,10 @@ export function runFFmpeg(inputPath: string, outputDir: string): Promise<void> {
 			'-bufsize:v:0',
 			'7500k', // VBV buffer size (1.5x target for smooth rate control)
 
-			// stream 1: 720p libx264 + optional input audio
+			// stream 1: 720p libx264 (+audio if present)
 			'-map',
 			'[v2out]',
-			'-map',
-			'0:a?',
+			...(hasAudio ? ['-map', '0:a:0'] : []),
 			'-c:v:1',
 			'libx264',
 			'-b:v:1',
@@ -51,11 +51,10 @@ export function runFFmpeg(inputPath: string, outputDir: string): Promise<void> {
 			'-bufsize:v:1',
 			'4200k',
 
-			// stream 2: 480p libx264 + optional input audio
+			// stream 2: 480p libx264 (+audio if present)
 			'-map',
 			'[v3out]',
-			'-map',
-			'0:a?',
+			...(hasAudio ? ['-map', '0:a:0'] : []),
 			'-c:v:2',
 			'libx264',
 			'-b:v:2',
@@ -78,11 +77,15 @@ export function runFFmpeg(inputPath: string, outputDir: string): Promise<void> {
 			'-keyint_min',
 			'48',
 
-			// audio: one mapped stream per output variant (same source, repeated -map)
-			'-c:a',
-			'aac',
-			'-b:a',
-			'128k',
+			// audio: one mapped stream per output variant when input has audio
+			...(hasAudio
+				? [
+						'-c:a',
+						'aac',
+						'-b:a',
+						'128k',
+					]
+				: []),
 
 			'-f',
 			'hls',
@@ -101,7 +104,7 @@ export function runFFmpeg(inputPath: string, outputDir: string): Promise<void> {
 			'master.m3u8',
 
 			'-var_stream_map',
-			'v:0,a:0 v:1,a:1 v:2,a:2', // pair nth video with nth audio in mux
+			hasAudio ? 'v:0,a:0 v:1,a:1 v:2,a:2' : 'v:0 v:1 v:2', // audio variants only if source has audio
 
 			`${outputDir}/%v/prog.m3u8`, // variant media playlists
 		];
@@ -117,4 +120,24 @@ export function runFFmpeg(inputPath: string, outputDir: string): Promise<void> {
 			else reject(new Error(`FFmpeg failed with code ${code}`));
 		});
 	});
+}
+
+function inputHasAudioStream(inputPath: string): boolean {
+	const probe = spawnSync(
+		'ffprobe',
+		[
+			'-v',
+			'error',
+			'-select_streams',
+			'a:0',
+			'-show_entries',
+			'stream=codec_type',
+			'-of',
+			'default=noprint_wrappers=1:nokey=1',
+			inputPath,
+		],
+		{ encoding: 'utf8' },
+	);
+
+	return probe.status === 0 && probe.stdout.trim().length > 0;
 }

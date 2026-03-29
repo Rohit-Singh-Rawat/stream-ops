@@ -5,8 +5,14 @@ import { z } from 'zod';
 import { logger } from '../../utils/logger';
 import { HTTP_INTERNAL_SERVER_ERROR, HTTP_NOT_FOUND } from '../../lib/constants';
 
+const uuidLikeSchema = z
+	.string()
+	.regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, {
+		message: 'id must be a UUID',
+	});
+
 const idParamSchema = z.object({
-	id: z.string().uuid(),
+	id: uuidLikeSchema,
 });
 
 const createVideoSchema = z.object({

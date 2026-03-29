@@ -37,4 +37,11 @@ const api = honoFactory.createApp();
 api.route('/videos', videosRoutes);
 
 app.route('/api', api);
+
+const port = process.env.PORT || 4000;
+console.log(`🚀 Server starting on port ${port}`);
+console.log(`📡 API connected and ready to receive requests`);
+console.log(`🔗 Health check available at http://localhost:${port}/`);
+console.log(`📹 Videos API available at http://localhost:${port}/api/videos`);
+
 export default app;

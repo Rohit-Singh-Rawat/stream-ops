@@ -1,12 +1,17 @@
 {
   "name": "@stream-ops/api",
+  "type": "module",
   "scripts": {
-    "dev": "bun run --hot src/index.ts"
+    "dev": "bun run --hot src/index.ts",
+    "db:push": "bun run --cwd ../../packages/db db:push",
+    "db:generate": "bun run --cwd ../../packages/db db:generate",
+    "db:migrate": "bun run --cwd ../../packages/db db:migrate",
+    "db:studio": "bun run --cwd ../../packages/db db:studio"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1009.0",
+    "@aws-sdk/client-s3": "^3.1017.0",
     "@aws-sdk/client-sqs": "^3.1017.0",
-    "@aws-sdk/s3-request-presigner": "^3.1009.0",
+    "@aws-sdk/s3-request-presigner": "^3.1017.0",
     "@hono/zod-validator": "^0.7.6",
     "@stream-ops/db": "workspace:*",
     "aws-sdk": "^2.1693.0",
