@@ -1,12 +1,12 @@
 export function formatTime(seconds: number): string {
-  if (!seconds || isNaN(seconds)) return '0:00';
+  if (!seconds || Number.isNaN(seconds)) return "0:00";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
   if (h > 0) {
-    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   }
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 export type Cue = {
@@ -20,7 +20,10 @@ export type Cue = {
 };
 
 export function parseVtt(vtt: string, baseUrl: string): Cue[] {
-  const lines = vtt.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = vtt
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
   const cues: Cue[] = [];
 
   for (let i = 0; i < lines.length; i++) {
@@ -35,11 +38,11 @@ export function parseVtt(vtt: string, baseUrl: string): Cue[] {
 
       let imageUrl = match[1];
 
-      // Automatically resolves relative paths (sprite.jpg), absolute paths (/videos/...), 
+      // Automatically resolves relative paths (sprite.jpg), absolute paths (/videos/...),
       // or full URLs perfectly against the VTT's location.
       try {
         imageUrl = new URL(imageUrl, baseUrl).href;
-      } catch (e) {
+      } catch (_error) {
         // Fallback if URL parsing fails for some reason
       }
 

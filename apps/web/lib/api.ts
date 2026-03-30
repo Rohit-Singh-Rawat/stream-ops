@@ -1,46 +1,34 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios';
+import { ApiError, type JsonRequestOptions, jsonRequest } from "@/lib/http";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 
-type RequestOptions = {
-	method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-	body?: unknown;
-	headers?: Record<string, string>;
-};
+type RequestOptions = Omit<JsonRequestOptions, "method">;
 
-const axiosClient: AxiosInstance = axios.create({
-	baseURL: API_BASE_URL,
-	withCredentials: true,
-	headers: {
-		'Content-Type': 'application/json',
-	},
-});
-
-async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-	const { method = 'GET', body, headers = {} } = options;
-
-	const cfg: AxiosRequestConfig = {
-		url: endpoint,
-		method,
-		headers,
-		data: body,
-	};
-
-	const res = await axiosClient.request<T>(cfg);
-	return res.data;
+function request<T>(
+  endpoint: string,
+  method: NonNullable<RequestInit["method"]>,
+  options: RequestOptions = {},
+): Promise<T> {
+  return jsonRequest<T>(API_BASE_URL, endpoint, {
+    ...options,
+    method,
+  });
 }
 
 export const api = {
-	get: <T>(endpoint: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
-		request<T>(endpoint, { ...options, method: 'GET' }),
-	post: <T>(endpoint: string, body?: unknown, options?: Omit<RequestOptions, 'method' | 'body'>) =>
-		request<T>(endpoint, { ...options, method: 'POST', body }),
-	put: <T>(endpoint: string, body?: unknown, options?: Omit<RequestOptions, 'method' | 'body'>) =>
-		request<T>(endpoint, { ...options, method: 'PUT', body }),
-	patch: <T>(endpoint: string, body?: unknown, options?: Omit<RequestOptions, 'method' | 'body'>) =>
-		request<T>(endpoint, { ...options, method: 'PATCH', body }),
-	delete: <T>(endpoint: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
-		request<T>(endpoint, { ...options, method: 'DELETE' }),
+  get: <T>(endpoint: string, options?: RequestOptions) =>
+    request<T>(endpoint, "GET", options),
+  post: <T>(endpoint: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(endpoint, "POST", { ...options, body }),
+  put: <T>(endpoint: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(endpoint, "PUT", { ...options, body }),
+  patch: <T>(endpoint: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(endpoint, "PATCH", { ...options, body }),
+  delete: <T>(endpoint: string, options?: RequestOptions) =>
+    request<T>(endpoint, "DELETE", options),
 };
+
+export { ApiError };
 
 export default api;
