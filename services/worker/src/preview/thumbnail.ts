@@ -6,6 +6,7 @@ export async function extractThumbnails(inputPath: string, outputDir: string): P
 	await fs.mkdir(outputDir, { recursive: true });
 
 	const args = [
+		'-y',
 		'-i',
 		inputPath,
 		'-vf',
@@ -34,6 +35,7 @@ function run(cmd: string, args: string[]) {
 }
 export async function generateSprite(inputPath: string, outputPath: string): Promise<void> {
 	const args = [
+		'-y',
 		'-i',
 		inputPath,
 		'-vf',

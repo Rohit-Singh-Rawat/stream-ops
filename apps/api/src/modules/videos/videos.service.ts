@@ -1,230 +1,296 @@
-import { db, eq, videos } from '@stream-ops/db';
+import { db, eq, videos } from "@stream-ops/db";
 import {
-	generateUploadUrl,
-	createMultipartUpload,
-	generateUploadPartUrl,
-	computeMultipartPlan,
-	abortMultipartUpload,
-	completeMultipartUpload,
-} from '../../config/s3';
-import { env } from '../../config/env';
-import { sendTranscodeJob } from '../../config/sqs';
-import { MULTIPART_PART_SIZE } from '../../lib/constants';
-
-export type VideoSummary = {
-	id: string;
-	name: string;
-	size: number;
-	type: string;
-	status: string;
-	createdAt: string;
-	updatedAt: string;
-};
+  ACTIVE_VIDEO_STATUSES,
+  type ListVideosResponse,
+  type VideoCollectionSummary,
+  type VideoSummary,
+} from "@stream-ops/types";
+import { desc, sql } from "drizzle-orm";
+import {
+  generateUploadUrl,
+  createMultipartUpload,
+  generateUploadPartUrl,
+  computeMultipartPlan,
+  abortMultipartUpload,
+  completeMultipartUpload,
+} from "../../config/s3";
+import { env } from "../../config/env";
+import { sendTranscodeJob } from "../../config/sqs";
+import { MULTIPART_PART_SIZE } from "../../lib/constants";
 
 export interface SingleUploadDescriptor {
-	type: 'single';
-	uploadUrl: string;
-	key: string;
+  type: "single";
+  uploadUrl: string;
+  key: string;
 }
 
 export interface MultipartUploadDescriptor {
-	type: 'multipart';
-	uploadId: string;
-	key: string;
-	partSize: number;
-	parts: Array<{ partNumber: number; uploadUrl: string }>;
+  type: "multipart";
+  uploadId: string;
+  key: string;
+  partSize: number;
+  parts: Array<{ partNumber: number; uploadUrl: string }>;
 }
 
-export type UploadDescriptor = SingleUploadDescriptor | MultipartUploadDescriptor;
+export type UploadDescriptor =
+  | SingleUploadDescriptor
+  | MultipartUploadDescriptor;
 
 export type PresignUploadResponse = {
-	video: VideoSummary;
-	upload: UploadDescriptor;
+  video: VideoSummary;
+  upload: UploadDescriptor;
 };
 
 const videoSummaryColumns = {
-	id: videos.id,
-	name: videos.name,
-	type: videos.mimeType,
-	status: videos.status,
-	sourceSizeBytes: videos.sourceSizeBytes,
-	createdAt: videos.createdAt,
-	updatedAt: videos.updatedAt,
+  id: videos.id,
+  name: videos.name,
+  type: videos.mimeType,
+  status: videos.status,
+  sourceSizeBytes: videos.sourceSizeBytes,
+  createdAt: videos.createdAt,
+  updatedAt: videos.updatedAt,
 } as const;
 
 type VideoSummaryRow = {
-	id: string;
-	name: string;
-	type: string;
-	status: string;
-	sourceSizeBytes: bigint | null;
-	createdAt: Date;
-	updatedAt: Date;
+  id: string;
+  name: string;
+  type: string;
+  status: VideoSummary["status"];
+  sourceSizeBytes: bigint | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 function videoSummary(row: VideoSummaryRow): VideoSummary {
-	const n = row.sourceSizeBytes ?? BigInt(0);
-	return {
-		id: row.id,
-		name: row.name,
-		type: row.type,
-		status: row.status,
-		size: Number(n),
-		createdAt: row.createdAt.toISOString(),
-		updatedAt: row.updatedAt.toISOString(),
-	};
+  const n = row.sourceSizeBytes ?? BigInt(0);
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    status: row.status,
+    size: Number(n),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
 function extForMime(mime: string) {
-	if (mime === 'video/mp4') return '.mp4';
-	if (mime === 'video/webm') return '.webm';
-	return '.bin';
+  if (mime === "video/mp4") return ".mp4";
+  if (mime === "video/webm") return ".webm";
+  return ".bin";
 }
 
+function createEmptyCollectionSummary(): VideoCollectionSummary {
+  return {
+    total: 0,
+    ready: 0,
+    processing: 0,
+    failed: 0,
+  };
+}
+
+const activeVideoStatuses = new Set<string>(ACTIVE_VIDEO_STATUSES);
+
 export class VideosService {
-	private static instance: VideosService;
+  private static instance: VideosService;
 
-	private constructor() {}
+  private constructor() {}
 
-	public static getInstance(): VideosService {
-		if (!VideosService.instance) {
-			VideosService.instance = new VideosService();
-		}
-		return VideosService.instance;
-	}
+  public static getInstance(): VideosService {
+    if (!VideosService.instance) {
+      VideosService.instance = new VideosService();
+    }
+    return VideosService.instance;
+  }
 
-	public async createVideo(input: {
-		name: string;
-		size: number;
-		type: string;
-	}): Promise<{ video: VideoSummary }> {
-		const videoId = Bun.randomUUIDv7();
-		const [row] = await db
-			.insert(videos)
-			.values({
-				id: videoId,
-				name: input.name,
-				mimeType: input.type,
-				sourceSizeBytes: BigInt(input.size),
-				status: 'created',
-			})
-			.returning(videoSummaryColumns);
+  public async createVideo(input: {
+    name: string;
+    size: number;
+    type: string;
+  }): Promise<{ video: VideoSummary }> {
+    const videoId = Bun.randomUUIDv7();
+    const [row] = await db
+      .insert(videos)
+      .values({
+        id: videoId,
+        name: input.name,
+        mimeType: input.type,
+        sourceSizeBytes: BigInt(input.size),
+        status: "created",
+      })
+      .returning(videoSummaryColumns);
 
-		if (!row) {
-			throw new Error('Failed to create video');
-		}
+    if (!row) {
+      throw new Error("Failed to create video");
+    }
 
-		return { video: videoSummary(row) };
-	}
+    return { video: videoSummary(row) };
+  }
 
-	public async getVideoById(videoId: string): Promise<VideoSummary | null> {
-		const [row] = await db
-			.select(videoSummaryColumns)
-			.from(videos)
-			.where(eq(videos.id, videoId))
-			.limit(1);
-		return row ? videoSummary(row) : null;
-	}
+  public async listVideos(
+    input: { limit?: number } = {},
+  ): Promise<ListVideosResponse> {
+    const limit = input.limit ?? 48;
+    const [rows, summaryRows] = await Promise.all([
+      db
+        .select(videoSummaryColumns)
+        .from(videos)
+        .orderBy(desc(videos.updatedAt), desc(videos.createdAt))
+        .limit(limit),
+      db
+        .select({
+          status: videos.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(videos)
+        .groupBy(videos.status),
+    ]);
 
-	public async presignUpload(videoId: string): Promise<PresignUploadResponse | null> {
-		const [meta] = await db
-			.select({
-				mimeType: videos.mimeType,
-				sourceSizeBytes: videos.sourceSizeBytes,
-			})
-			.from(videos)
-			.where(eq(videos.id, videoId))
-			.limit(1);
+    const summary = createEmptyCollectionSummary();
+    for (const row of summaryRows) {
+      summary.total += row.count;
+      if (row.status === "ready") {
+        summary.ready += row.count;
+      }
+      if (row.status === "failed") {
+        summary.failed += row.count;
+      }
+      if (activeVideoStatuses.has(row.status)) {
+        summary.processing += row.count;
+      }
+    }
 
-		if (!meta) {
-			return null;
-		}
+    return {
+      videos: rows.map(videoSummary),
+      summary,
+    };
+  }
 
-		const key = `videos/${videoId}/original${extForMime(meta.mimeType)}`;
-		const size = Number(meta.sourceSizeBytes ?? BigInt(0));
+  public async getVideoById(videoId: string): Promise<VideoSummary | null> {
+    const [row] = await db
+      .select(videoSummaryColumns)
+      .from(videos)
+      .where(eq(videos.id, videoId))
+      .limit(1);
+    return row ? videoSummary(row) : null;
+  }
 
-		const [row] = await db
-			.update(videos)
-			.set({
-				sourceKey: key,
-				sourceBucket: env.INPUT_BUCKET,
-				status: 'uploading',
-			})
-			.where(eq(videos.id, videoId))
-			.returning(videoSummaryColumns);
+  public async presignUpload(
+    videoId: string,
+  ): Promise<PresignUploadResponse | null> {
+    const [meta] = await db
+      .select({
+        mimeType: videos.mimeType,
+        sourceSizeBytes: videos.sourceSizeBytes,
+      })
+      .from(videos)
+      .where(eq(videos.id, videoId))
+      .limit(1);
 
-		if (!row) {
-			return null;
-		}
+    if (!meta) {
+      return null;
+    }
 
-		const v = videoSummary(row);
+    const key = `videos/${videoId}/original${extForMime(meta.mimeType)}`;
+    const size = Number(meta.sourceSizeBytes ?? BigInt(0));
 
-		if (size > MULTIPART_PART_SIZE) {
-			const { uploadId } = await createMultipartUpload(key, meta.mimeType);
-			const { partSize, partCount } = computeMultipartPlan(size);
+    const [row] = await db
+      .update(videos)
+      .set({
+        sourceKey: key,
+        sourceBucket: env.INPUT_BUCKET,
+        status: "uploading",
+      })
+      .where(eq(videos.id, videoId))
+      .returning(videoSummaryColumns);
 
-			const parts: Array<{ partNumber: number; uploadUrl: string }> = [];
-			for (let partNumber = 1; partNumber <= partCount; partNumber++) {
-				const isLastPart = partNumber === partCount;
-				const contentLength = isLastPart ? size - (partCount - 1) * partSize : partSize;
+    if (!row) {
+      return null;
+    }
 
-				const uploadUrl = await generateUploadPartUrl({
-					key,
-					uploadId,
-					partNumber,
-					contentLength,
-				});
-				parts.push({ partNumber, uploadUrl });
-			}
+    const v = videoSummary(row);
 
-			return {
-				video: v,
-				upload: { type: 'multipart', uploadId, key, partSize, parts },
-			};
-		}
+    if (size > MULTIPART_PART_SIZE) {
+      const { uploadId } = await createMultipartUpload(key, meta.mimeType);
+      const { partSize, partCount } = computeMultipartPlan(size);
 
-		const uploadUrl = await generateUploadUrl(key, meta.mimeType);
-		return {
-			video: v,
-			upload: { type: 'single', uploadUrl, key },
-		};
-	}
+      const parts: Array<{ partNumber: number; uploadUrl: string }> = [];
+      for (let partNumber = 1; partNumber <= partCount; partNumber++) {
+        const isLastPart = partNumber === partCount;
+        const contentLength = isLastPart
+          ? size - (partCount - 1) * partSize
+          : partSize;
 
-	public async queueTranscode(videoId: string): Promise<void> {
-		const [video] = await db
-			.select({
-				sourceBucket: videos.sourceBucket,
-				sourceKey: videos.sourceKey,
-			})
-			.from(videos)
-			.where(eq(videos.id, videoId))
-			.limit(1);
+        const uploadUrl = await generateUploadPartUrl({
+          key,
+          uploadId,
+          partNumber,
+          contentLength,
+        });
+        parts.push({ partNumber, uploadUrl });
+      }
 
-		if (!video) {
-			throw new Error('Video not found');
-		}
+      return {
+        video: v,
+        upload: { type: "multipart", uploadId, key, partSize, parts },
+      };
+    }
 
-		const inputKey = video.sourceKey?.trim();
-		if (!inputKey) {
-			throw new Error('Video has no source key; presign upload first');
-		}
+    const uploadUrl = await generateUploadUrl(key, meta.mimeType);
+    return {
+      video: v,
+      upload: { type: "single", uploadUrl, key },
+    };
+  }
 
-		await db.update(videos).set({ status: 'queued' }).where(eq(videos.id, videoId));
+  public async queueTranscode(videoId: string): Promise<void> {
+    const [video] = await db
+      .select({
+        sourceBucket: videos.sourceBucket,
+        sourceKey: videos.sourceKey,
+      })
+      .from(videos)
+      .where(eq(videos.id, videoId))
+      .limit(1);
 
-		const bucket = video.sourceBucket ?? env.INPUT_BUCKET;
-		await sendTranscodeJob([{ bucket, key: inputKey }]);
-	}
+    if (!video) {
+      throw new Error("Video not found");
+    }
 
-	public async completeUpload(params: { key: string; uploadId: string }): Promise<void> {
-		await completeMultipartUpload(params);
+    const inputKey = video.sourceKey?.trim();
+    if (!inputKey) {
+      throw new Error("Video has no source key; presign upload first");
+    }
 
-		const [video] = await db.select({ id: videos.id }).from(videos).where(eq(videos.sourceKey, params.key)).limit(1);
-		if (!video) throw new Error('Video not found for completed upload');
+    await db
+      .update(videos)
+      .set({ status: "queued" })
+      .where(eq(videos.id, videoId));
 
-		await this.queueTranscode(video.id);
-	}
+    const bucket = video.sourceBucket ?? env.INPUT_BUCKET;
+    await sendTranscodeJob([{ bucket, key: inputKey }]);
+  }
 
-	public async abortUpload(params: { key: string; uploadId: string }): Promise<void> {
-		await abortMultipartUpload(params);
-	}
+  public async completeUpload(params: {
+    key: string;
+    uploadId: string;
+  }): Promise<void> {
+    await completeMultipartUpload(params);
+
+    const [video] = await db
+      .select({ id: videos.id })
+      .from(videos)
+      .where(eq(videos.sourceKey, params.key))
+      .limit(1);
+    if (!video) throw new Error("Video not found for completed upload");
+
+    await this.queueTranscode(video.id);
+  }
+
+  public async abortUpload(params: {
+    key: string;
+    uploadId: string;
+  }): Promise<void> {
+    await abortMultipartUpload(params);
+  }
 }
