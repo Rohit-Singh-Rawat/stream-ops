@@ -1,12 +1,17 @@
 {
   "name": "orchestrator",
-  "module": "index.ts",
-  "type": "module",
   "private": true,
+  "scripts": {
+    "build": "bun build src/handler.ts --outfile dist/index.js --target node --format cjs --external '@aws-sdk/*'",
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/node": "^25.5.0"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ecs": "^3.1020.0"
   }
 }
