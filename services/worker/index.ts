@@ -1,103 +1,25 @@
-import fs from 'fs';
-import path from 'path';
-import { db, eq, videos } from '@stream-ops/db';
+import { processVideo } from './src/processor';
 import { logEvent } from './src/infra/logger';
-import { pollQueue } from './src/infra/queue';
-import { downloadFile } from './src/infra/s3';
-import { jobWorkspaceDirName } from './src/paths';
-import { runHlsEncode, uploadHlsPackage } from './src/pipeline/hlsPipeline';
-import {
-	runThumbnailVttGeneration,
-	uploadThumbnailVttPackage,
-} from './src/pipeline/thumbnailVttPipeline';
 
-const outputBucket = process.env.OUTPUT_BUCKET;
-
-if (!process.env.INPUT_BUCKET?.trim()) {
-	throw new Error('INPUT_BUCKET is not set');
-}
-if (!outputBucket) {
-	throw new Error('OUTPUT_BUCKET is not set');
+function requireEnv(name: string): string {
+	const value = process.env[name]?.trim();
+	if (!value) throw new Error(`Missing required environment variable: ${name}`);
+	return value;
 }
 
-function removeWorkDir(dir: string): boolean {
-	try {
-		fs.rmSync(dir, { recursive: true, force: true });
-		return true;
-	} catch (err) {
-		logEvent({
-			step: 'cleanup_failed',
-			dir,
-			error: err instanceof Error ? err.message : String(err),
-		});
-		return false;
-	}
-}
+const videoId = requireEnv('VIDEO_ID');
+const bucket = requireEnv('S3_BUCKET');
+const key = requireEnv('S3_KEY');
+const outputBucket = requireEnv('OUTPUT_BUCKET');
 
-logEvent({ step: 'worker_started' });
+logEvent({ step: 'worker_started', videoId, bucket, key, outputBucket });
 
-pollQueue(async (job) => {
-	for (const source of job.sources) {
-		const { bucket, key } = source;
-
-		if (key.includes('/hls/') || key.startsWith('hls/')) {
-			logEvent({ step: 'source_skipped', key, reason: 'hls_output_path' });
-			continue;
-		}
-
-		const videoId = jobWorkspaceDirName(key);
-		const baseDir = `/tmp/${videoId}`;
-		const outputDir = `${baseDir}/hls`;
-		const thumbnailsDir = path.join(baseDir, 'thumbnails');
-		const spritePath = path.join(thumbnailsDir, 'sprite.jpg');
-		const vttPath = path.join(thumbnailsDir, 'thumbnails.vtt');
-
-		try {
-			fs.mkdirSync(baseDir, { recursive: true });
-			fs.mkdirSync(outputDir, { recursive: true });
-
-			logEvent({ step: 'source_started', videoId, bucket, key });
-
-			await db.update(videos).set({ status: 'processing' }).where(eq(videos.id, videoId));
-
-			const inputPath = await downloadFile(bucket, key, baseDir);
-			logEvent({ step: 'download_complete', videoId, key });
-
-			await runHlsEncode({ inputPath, outputDir, videoId });
-			await runThumbnailVttGeneration({
-				inputPath,
-				thumbnailsDir,
-				spritePath,
-				vttPath,
-				objectKey: key,
-				videoId,
-			});
-
-			await uploadHlsPackage({ outputDir, outputBucket, objectKey: key, videoId });
-			await uploadThumbnailVttPackage({
-				spritePath,
-				vttPath,
-				outputBucket,
-				objectKey: key,
-				videoId,
-			});
-
-			await db.update(videos).set({ status: 'ready' }).where(eq(videos.id, videoId));
-		} catch (err) {
-			try {
-				await db.update(videos).set({ status: 'failed' }).where(eq(videos.id, videoId));
-			} catch {}
-			logEvent({
-				step: 'source_failed',
-				videoId,
-				key,
-				error: err instanceof Error ? err.message : String(err),
-			});
-			throw err;
-		} finally {
-			if (removeWorkDir(baseDir)) {
-				logEvent({ step: 'cleanup_complete', videoId });
-			}
-		}
-	}
-});
+processVideo({ videoId, bucket, key, outputBucket })
+	.then(() => {
+		logEvent({ step: 'worker_done', videoId });
+		process.exit(0);
+	})
+	.catch((err: unknown) => {
+		console.error(err instanceof Error ? err.stack : String(err));
+		process.exit(1);
+	});

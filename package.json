@@ -4,7 +4,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "dev:db": "docker compose up -d postgres db-migrate && turbo run dev",
+    "dev:db": "docker compose up -d postgres db-migrate && turbo run dev --filter=!@stream-ops/worker",
     "docker:db":"docker compose up -d postgres db-migrate",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",

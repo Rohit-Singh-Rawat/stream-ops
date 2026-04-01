@@ -3,8 +3,8 @@
 	"module": "index.ts",
 	"type": "module",
 	"scripts": {
-		"dev": "bun run index.ts",
-		"start": "bun run index.ts"
+		"start": "bun run index.ts",
+		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
 		"@types/bun": "latest"
@@ -14,7 +14,6 @@
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.1011.0",
-		"@aws-sdk/client-sqs": "^3.1010.0",
 		"@aws-sdk/middleware-flexible-checksums": "^3.974.5",
 		"@stream-ops/db": "workspace:*"
 	}
