@@ -12,6 +12,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@aws-sdk/client-ecs": "^3.1020.0"
+    "@aws-sdk/client-ecs": "^3.1020.0",
+    "@stream-ops/logger": "workspace:*"
   }
 }

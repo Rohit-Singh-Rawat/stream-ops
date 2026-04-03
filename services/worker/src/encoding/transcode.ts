@@ -1,11 +1,5 @@
 import { spawn, spawnSync } from 'child_process';
 
-// ffmpeg works in pipelines, each video stream is a separate pipeline
-
-/**
- * Transcodes `inputPath` to a 3-rendition HLS VOD package under `outputDir`
- * (1080p / 720p / 480p video, AAC audio, master.m3u8 + per-rendition playlists and .ts segments).
- */
 export function runFFmpeg(inputPath: string, outputDir: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const hasAudio = inputHasAudioStream(inputPath);
@@ -110,10 +104,6 @@ export function runFFmpeg(inputPath: string, outputDir: string): Promise<void> {
 		];
 
 		const ff = spawn('ffmpeg', args);
-
-		ff.stderr.on('data', (data) => {
-			console.log(data.toString());
-		});
 
 		ff.on('close', (code) => {
 			if (code === 0) resolve();

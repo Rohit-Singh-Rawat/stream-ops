@@ -23,10 +23,6 @@ function run(cmd: string, args: string[]) {
 	return new Promise<void>((resolve, reject) => {
 		const child = spawn(cmd, args);
 
-		child.stderr.on('data', (d) => {
-			console.log(d.toString());
-		});
-
 		child.on('close', (code) => {
 			if (code === 0) resolve();
 			else reject(new Error(`${cmd} failed with code ${code}`));

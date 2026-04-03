@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import { log } from '@stream-ops/logger';
 import { db, eq, videoJobs, videoThumbnails, videoRenditions, videos } from '@stream-ops/db';
-import { logEvent } from './infra/logger';
 import { downloadFile } from './infra/s3';
 import { outputKeyPrefixForTranscode, thumbnailKeyPrefix } from './paths';
 import { runHlsEncode, uploadHlsPackage } from './pipeline/hlsPipeline';
@@ -38,14 +38,16 @@ function buildWorkspace(videoId: string): Workspace {
 	};
 }
 
-
-
 function removeWorkDir(dir: string): boolean {
 	try {
 		fs.rmSync(dir, { recursive: true, force: true });
 		return true;
 	} catch (err) {
-		logEvent({ step: 'cleanup_failed', dir, error: err instanceof Error ? err.message : String(err) });
+		log({
+			stage: 'cleanup_failed',
+			dir,
+			error: err instanceof Error ? err.message : String(err),
+		});
 		return false;
 	}
 }
@@ -64,7 +66,7 @@ async function createJobRecord(
 	if (!job) throw new Error('Failed to insert video_jobs row');
 
 	await db.update(videos).set({ status: 'processing', latestJobId: job.id }).where(eq(videos.id, videoId));
-	logEvent({ step: 'job_created', videoId, jobId: job.id });
+	log({ stage: 'job_created', videoId, jobId: job.id });
 	return job.id;
 }
 
@@ -123,7 +125,7 @@ export async function processVideo({ videoId, bucket, key, outputBucket }: Proce
 	const outputPrefix = outputKeyPrefixForTranscode(key, videoId);
 	const thumbPrefix = thumbnailKeyPrefix(key, videoId);
 
-	logEvent({ step: 'pipeline_start', videoId, bucket, key, outputBucket });
+	log({ stage: 'pipeline_start', videoId, bucket, key, outputBucket });
 
 	let jobId: string | null = null;
 
@@ -132,11 +134,19 @@ export async function processVideo({ videoId, bucket, key, outputBucket }: Proce
 		fs.mkdirSync(ws.outputDir, { recursive: true });
 		fs.mkdirSync(ws.thumbnailsDir, { recursive: true });
 
+		const dlStart = Date.now();
 		const inputPath = await downloadFile(bucket, key, ws.baseDir);
-		logEvent({ step: 'download_complete', videoId, jobId, key });
+		log({ stage: 'download_complete', videoId, jobId, key, durationMs: Date.now() - dlStart });
 
-		// Probe duration early — fails fast if the file is corrupt before we burn ffmpeg time
+		const probeStart = Date.now();
 		const durationSeconds = await getVideoDuration(inputPath);
+		log({
+			stage: 'duration_probe_complete',
+			videoId,
+			jobId,
+			durationSeconds,
+			durationMs: Date.now() - probeStart,
+		});
 
 		await runHlsEncode({ inputPath, outputDir: ws.outputDir, videoId });
 		await runThumbnailVttGeneration({
@@ -146,6 +156,7 @@ export async function processVideo({ videoId, bucket, key, outputBucket }: Proce
 			vttPath: ws.vttPath,
 			objectKey: key,
 			videoId,
+			durationSeconds,
 		});
 
 		await uploadHlsPackage({ outputDir: ws.outputDir, outputBucket, objectKey: key, videoId });
@@ -158,23 +169,28 @@ export async function processVideo({ videoId, bucket, key, outputBucket }: Proce
 		const thumbnailVttUrl = `${thumbPrefix}/thumbnails.vtt`;
 		await markJobSucceeded(jobId, videoId, playbackUrl, thumbnailVttUrl, durationSeconds);
 
-		logEvent({ step: 'pipeline_complete', videoId, jobId, playbackUrl, thumbnailVttUrl });
+		log({ stage: 'pipeline_complete', videoId, jobId, playbackUrl, thumbnailVttUrl });
 	} catch (err) {
 		const errorMessage = err instanceof Error ? err.message : String(err);
-		logEvent({ step: 'pipeline_failed', videoId, jobId, error: errorMessage });
+		log({ stage: 'pipeline_failed', videoId, jobId, error: errorMessage });
 
 		if (jobId) {
 			try {
 				await markJobFailed(jobId, videoId, errorMessage);
 			} catch (dbErr) {
-				logEvent({ step: 'mark_failed_error', videoId, jobId, error: dbErr instanceof Error ? dbErr.message : String(dbErr) });
+				log({
+					stage: 'mark_failed_error',
+					videoId,
+					jobId,
+					error: dbErr instanceof Error ? dbErr.message : String(dbErr),
+				});
 			}
 		}
 
 		throw err;
 	} finally {
 		if (removeWorkDir(ws.baseDir)) {
-			logEvent({ step: 'cleanup_complete', videoId });
+			log({ stage: 'cleanup_complete', videoId });
 		}
 	}
 }

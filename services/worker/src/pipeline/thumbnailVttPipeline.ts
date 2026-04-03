@@ -1,5 +1,4 @@
-import { getVideoDuration } from '../encoding/duration';
-import { logEvent } from '../infra/logger';
+import { log } from '@stream-ops/logger';
 import { uploadFile } from '../infra/s3';
 import { thumbnailKeyPrefix, webPathForThumbnailSprite } from '../paths';
 import { extractThumbnails, generateSprite } from '../preview/thumbnail';
@@ -18,11 +17,9 @@ export interface ThumbnailVttPipelineParams {
 	outputBucket: string;
 	objectKey: string;
 	videoId: string;
+	durationSeconds: number;
 }
 
-/**
- * Thumbnail + WebVTT pipeline — local: strip frames, sprite sheet, duration probe, VTT file.
- */
 export async function runThumbnailVttGeneration({
 	inputPath,
 	thumbnailsDir,
@@ -30,13 +27,20 @@ export async function runThumbnailVttGeneration({
 	vttPath,
 	objectKey,
 	videoId,
+	durationSeconds,
 }: Pick<
 	ThumbnailVttPipelineParams,
-	'inputPath' | 'thumbnailsDir' | 'spritePath' | 'vttPath' | 'objectKey' | 'videoId'
+	| 'inputPath'
+	| 'thumbnailsDir'
+	| 'spritePath'
+	| 'vttPath'
+	| 'objectKey'
+	| 'videoId'
+	| 'durationSeconds'
 >): Promise<void> {
+	const start = Date.now();
 	await extractThumbnails(inputPath, thumbnailsDir);
 	await generateSprite(inputPath, spritePath);
-	const durationSeconds = await getVideoDuration(inputPath);
 	const spriteWebPath = webPathForThumbnailSprite(objectKey, videoId);
 	await generateVttFile(
 		vttPath,
@@ -47,12 +51,9 @@ export async function runThumbnailVttGeneration({
 		THUMB_HEIGHT,
 		SPRITE_COLUMNS,
 	);
-	logEvent({ step: 'thumbnails_complete', videoId });
+	log({ stage: 'thumbnails_local_complete', videoId, durationMs: Date.now() - start });
 }
 
-/**
- * Upload sprite + VTT for preview scrubbing.
- */
 export async function uploadThumbnailVttPackage({
 	spritePath,
 	vttPath,
@@ -64,7 +65,8 @@ export async function uploadThumbnailVttPackage({
 	'spritePath' | 'vttPath' | 'outputBucket' | 'objectKey' | 'videoId'
 >): Promise<void> {
 	const thumbPrefix = thumbnailKeyPrefix(objectKey, videoId);
+	const start = Date.now();
 	await uploadFile(outputBucket, spritePath, `${thumbPrefix}/sprite.jpg`, 'image/jpeg');
 	await uploadFile(outputBucket, vttPath, `${thumbPrefix}/thumbnails.vtt`, 'text/vtt');
-	logEvent({ step: 'thumbnail_upload_complete', videoId, outputBucket, thumbPrefix });
+	log({ stage: 'thumbnail_upload_complete', videoId, outputBucket, thumbPrefix, durationMs: Date.now() - start });
 }

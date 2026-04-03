@@ -1,5 +1,5 @@
+import { log } from '@stream-ops/logger';
 import { processVideo } from './src/processor';
-import { logEvent } from './src/infra/logger';
 
 function requireEnv(name: string): string {
 	const value = process.env[name]?.trim();
@@ -12,14 +12,19 @@ const bucket = requireEnv('S3_BUCKET');
 const key = requireEnv('S3_KEY');
 const outputBucket = requireEnv('OUTPUT_BUCKET');
 
-logEvent({ step: 'worker_started', videoId, bucket, key, outputBucket });
+log({ stage: 'worker_started', videoId, bucket, key, outputBucket });
 
 processVideo({ videoId, bucket, key, outputBucket })
 	.then(() => {
-		logEvent({ step: 'worker_done', videoId });
+		log({ stage: 'worker_done', videoId });
 		process.exit(0);
 	})
 	.catch((err: unknown) => {
-		console.error(err instanceof Error ? err.stack : String(err));
+		log({
+			stage: 'worker_fatal',
+			videoId,
+			error: err instanceof Error ? err.message : String(err),
+			stack: err instanceof Error ? err.stack : undefined,
+		});
 		process.exit(1);
 	});

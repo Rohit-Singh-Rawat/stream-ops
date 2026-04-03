@@ -20,10 +20,6 @@ export function getVideoDuration(inputPath: string): Promise<number> {
 			output += data.toString();
 		});
 
-		child.stderr.on('data', (data) => {
-			console.error(data.toString());
-		});
-
 		child.on('close', (code) => {
 			if (code !== 0) {
 				reject(new Error(`ffprobe failed with code ${code}`));

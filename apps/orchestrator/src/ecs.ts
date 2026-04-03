@@ -1,4 +1,5 @@
 import { ECSClient, RunTaskCommand, type RunTaskCommandInput } from '@aws-sdk/client-ecs';
+import { log } from '@stream-ops/logger';
 
 export interface RunTaskInput {
 	videoId: string;
@@ -20,9 +21,11 @@ const securityGroups = requireEnv('SECURITY_GROUPS').split(',').map((s) => s.tri
 const containerName = process.env.CONTAINER_NAME?.trim() ?? 'video-transcoder';
 
 export async function runTask({ videoId, bucket, key }: RunTaskInput): Promise<void> {
+	log({ stage: 'ecs_run_task_start', videoId, bucket, key });
+
 	const input: RunTaskCommandInput = {
 		cluster,
-		taskDefinition, 
+		taskDefinition,
 		launchType: 'FARGATE',
 		networkConfiguration: {
 			awsvpcConfiguration: {
@@ -50,6 +53,10 @@ export async function runTask({ videoId, bucket, key }: RunTaskInput): Promise<v
 	const failures = res.failures ?? [];
 	if (failures.length > 0) {
 		const detail = failures.map((f) => `${f.arn ?? 'unknown'}: ${f.reason ?? 'no reason'}`).join('; ');
+		log({ stage: 'ecs_run_task_failed', videoId, detail });
 		throw new Error(`ECS RunTask failures: ${detail}`);
 	}
+
+	const taskArn = res.tasks?.[0]?.taskArn;
+	log({ stage: 'ecs_run_task_dispatched', videoId, taskArn });
 }

@@ -1,3 +1,4 @@
+import { log } from '@stream-ops/logger';
 import { runTask } from './ecs';
 
 interface S3Record {
@@ -19,11 +20,6 @@ function decodeS3Key(key: string): string {
 	return decodeURIComponent(key.replace(/\+/g, ' '));
 }
 
-/**
- * Extracts videoId from the S3 key.
- * Expected key convention: uploads/<videoId>/<filename>
- * The parent segment (second-to-last) is the videoId.
- */
 function videoIdFromKey(key: string): string {
 	const segments = key.split('/').filter(Boolean);
 	return segments.length >= 2 ? segments[segments.length - 2]! : segments[0] ?? key;
@@ -41,7 +37,7 @@ export const handler = async (event: SQSEvent): Promise<void> => {
 		try {
 			body = JSON.parse(sqsRecord.body);
 		} catch {
-			console.error('Failed to parse SQS message body:', sqsRecord.body);
+			log({ stage: 'sqs_body_parse_failed', body: sqsRecord.body });
 			continue;
 		}
 
@@ -51,17 +47,21 @@ export const handler = async (event: SQSEvent): Promise<void> => {
 			'Event' in body &&
 			String((body as Record<string, unknown>).Event).toLowerCase() === 's3:testevent'
 		) {
+			log({ stage: 's3_test_event_skipped' });
 			continue;
 		}
 
 		for (const s3Record of parseS3Records(body)) {
 			const bucket = s3Record.s3.bucket.name;
 			const key = decodeS3Key(s3Record.s3.object.key);
+			const videoId = videoIdFromKey(key);
 
-			// Skip HLS output keys — S3 notifications fire on our own uploads, causing a feedback loop
-			if (key.includes('/hls/') || key.startsWith('hls/')) continue;
+			if (key.includes('/hls/') || key.startsWith('hls/')) {
+				log({ stage: 's3_notification_skipped', videoId, key, reason: 'hls_output' });
+				continue;
+			}
 
-			await runTask({ videoId: videoIdFromKey(key), bucket, key });
+			await runTask({ videoId, bucket, key });
 		}
 	}
 };
