@@ -3,10 +3,20 @@ import { Suspense } from 'react';
 import { getVideosSnapshot } from '@/lib/server-api';
 import type { VideoSummary } from '@stream-ops/types';
 import { formatFileSize } from '@/lib/videos';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { VideoIcon } from '@hugeicons/core-free-icons';
+import { VideoPoster } from '@/components/video-poster';
+import { DeleteAllVideosButton } from '@/components/delete-all-videos-button';
 
 const HOME_VIDEO_LIMIT = 50;
+
+const ASSET_BASE = process.env.NEXT_PUBLIC_ASSET_BASE_URL?.replace(/\/+$/, '') ?? '';
+
+function posterUrls(video: VideoSummary): { full: string; thumb: string } | null {
+	if (!video.posterUrl || !video.posterThumbUrl || !ASSET_BASE) return null;
+	return {
+		full: `${ASSET_BASE}/${video.posterUrl}`,
+		thumb: `${ASSET_BASE}/${video.posterThumbUrl}`,
+	};
+}
 
 async function VideoList() {
 	const data = await getVideosSnapshot(HOME_VIDEO_LIMIT).catch(() => undefined);
@@ -18,7 +28,7 @@ async function VideoList() {
 	if (videos.length === 0) {
 		return (
 			<>
-				<h2 className='text-2xl  font-light text-zinc-100 tracking-tight mb-6 flex items-center gap-2'>
+				<h2 className='text-2xl font-light text-zinc-100 tracking-tight mb-6 flex items-center gap-2'>
 					<span className='text-zinc-500 font-mono text-base inline-flex items-center'>
 						<span>{`/${totalDisplay}`}</span>
 					</span>
@@ -36,20 +46,27 @@ async function VideoList() {
 
 	return (
 		<>
-			<h2 className='text-2xl  font-light text-zinc-100 tracking-tight mb-6 flex items-center gap-2'>
-				<span className='text-zinc-500 font-mono text-base inline-flex items-center'>
-					<span>{`/${totalDisplay}`}</span>
-				</span>
-				<span>Videos</span>
-			</h2>
+			<div className='flex items-center justify-between '>
+				<h2 className='text-2xl font-light text-zinc-100 tracking-tight mb-6 flex items-center gap-2'>
+					<span className='text-zinc-500 font-mono text-base inline-flex items-center'>
+						<span>{`/${totalDisplay}`}</span>
+					</span>
+					<span>Videos</span>
+				</h2>
+				<div className=''>
+					<DeleteAllVideosButton />
+				</div>
+			</div>
 
-			<div className='grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3'>
-				{videos.map((video) => (
-					<VideoCard
-						key={video.id}
-						video={video}
-					/>
-				))}
+			<div className='relative'>
+				<div className='grid grid-cols-1 gap-x-6 gap-y-12 sm:grid-cols-2 lg:grid-cols-3'>
+					{videos.map((video) => (
+						<VideoCard
+							key={video.id}
+							video={video}
+						/>
+					))}
+				</div>
 			</div>
 		</>
 	);
@@ -58,6 +75,7 @@ async function VideoList() {
 function VideoCard({ video }: { video: VideoSummary }) {
 	const isProcessing = ['processing', 'uploading', 'queued', 'created'].includes(video.status);
 	const isFailed = video.status === 'failed';
+	const poster = posterUrls(video);
 
 	return (
 		<Link
@@ -69,10 +87,19 @@ function VideoCard({ video }: { video: VideoSummary }) {
 					isFailed ? 'border border-[#ff4522]/50' : 'border border-white/5'
 				}`}
 			>
-				<HugeiconsIcon
-					icon={VideoIcon}
-					className='size-4 text-primary/50 m-2'
-				/>
+				{poster ? (
+					<VideoPoster
+						full={poster.full}
+						thumb={poster.thumb}
+						name={video.name}
+					/>
+				) : (
+					/* No poster yet: video is still processing or failed */
+					<div className='absolute inset-0 flex items-center justify-center'>
+						<div className='size-4 rounded-full bg-zinc-700/60' />
+					</div>
+				)}
+
 				{isProcessing && (
 					<div className='absolute bottom-0 left-0 h-[2px] w-[50%] bg-[#2177f1] animate-progress' />
 				)}
@@ -88,7 +115,7 @@ function VideoCard({ video }: { video: VideoSummary }) {
 					<span>·</span>
 					{isProcessing ? (
 						<span className='bg-[#2177f1]/10 text-[#2177f1] border-l-2 border-[#2177f1] px-1.5 py-0.5 uppercase tracking-widest font-semibold flex items-center'>
-							TRANSCODING 
+							TRANSCODING
 						</span>
 					) : isFailed ? (
 						<span className='bg-[#ff4522]/10 text-[#ff4522] border-l-2 border-[#ff4522] px-1.5 py-0.5 uppercase tracking-widest font-semibold flex items-center'>
@@ -135,6 +162,8 @@ function VideoListSkeleton() {
 export default function HomePage() {
 	return (
 		<div className='mx-auto w-full max-w-[1600px] px-6 lg:px-8 py-10'>
+			<div className='mb-6 flex items-center justify-end'>
+			</div>
 			<Suspense fallback={<VideoListSkeleton />}>
 				<VideoList />
 			</Suspense>

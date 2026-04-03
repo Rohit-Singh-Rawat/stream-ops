@@ -6,6 +6,7 @@ const videosController = VideosController.getInstance();
 const videosRoutes = honoFactory
   .createApp()
   .get("/", ...videosController.listVideosHandler)
+  .delete("/", ...videosController.deleteAllVideosHandler)
   .post("/", ...videosController.createVideoHandler)
   .get("/:id", ...videosController.getVideoHandler)
   .post("/:id/presign-upload", ...videosController.presignUploadHandler)

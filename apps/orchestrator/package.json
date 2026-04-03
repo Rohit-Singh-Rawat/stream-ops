@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "build": "bun build src/handler.ts --outfile dist/index.js --target node --format cjs --external '@aws-sdk/*'",
+    "zip":"bun run build && Compress-Archive -Force -Path dist/index.js -DestinationPath dist/lambda.zip",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

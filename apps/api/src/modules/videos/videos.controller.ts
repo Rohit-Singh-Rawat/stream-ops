@@ -105,11 +105,11 @@ export class VideosController {
     async (ctx) => {
       try {
         const { id } = ctx.req.valid("param");
-        const video = await this.videosService.getVideoById(id);
-        if (!video) {
+        const result = await this.videosService.getVideoById(id);
+        if (!result) {
           return ctx.json({ error: "Not found" }, HTTP_NOT_FOUND);
         }
-        return ctx.json({ video });
+        return ctx.json(result);
       } catch (error) {
         logger.error("Failed to get video", {
           error: error instanceof Error ? error.message : String(error),
@@ -195,6 +195,23 @@ export class VideosController {
         });
         return ctx.json(
           { error: "Failed to abort upload" },
+          HTTP_INTERNAL_SERVER_ERROR,
+        );
+      }
+    },
+  );
+
+  public deleteAllVideosHandler = honoFactory.createHandlers(
+    async (ctx) => {
+      try {
+        const result = await this.videosService.deleteAllVideos();
+        return ctx.json(result);
+      } catch (error) {
+        logger.error("Failed to delete all videos", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return ctx.json(
+          { error: "Failed to delete all videos" },
           HTTP_INTERNAL_SERVER_ERROR,
         );
       }

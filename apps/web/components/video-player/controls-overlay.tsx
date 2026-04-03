@@ -25,6 +25,7 @@ interface ControlsProps {
   title?: string;
   description?: string;
   vttUrl?: string;
+  hqVttUrl?: string;
   onBack?: () => void;
   qualityOptions: Array<{ value: number; label: string }>;
   selectedQuality: number;
@@ -38,6 +39,7 @@ export function ControlsOverlay({
   title,
   description,
   vttUrl,
+  hqVttUrl,
   onBack,
   qualityOptions,
   selectedQuality,
@@ -73,7 +75,7 @@ export function ControlsOverlay({
         isControlsVisible ? "opacity-100" : "opacity-0",
       )}
     >
-      <div className="w-full bg-gradient-to-b from-black/80 to-transparent p-4 flex items-center justify-between pointer-events-auto">
+      <div className="w-full bg-linear-to-b from-black/80 to-transparent p-4 flex items-center justify-between pointer-events-auto">
         <button
           type="button"
           onClick={onBack}
@@ -122,7 +124,7 @@ export function ControlsOverlay({
         </button>
       </div>
 
-      <div className="w-full bg-gradient-to-t from-black/90 via-black/40 to-transparent p-4 md:px-8 pb-6 pointer-events-auto">
+      <div className="w-full bg-linear-to-t from-black/90 via-black/40 to-transparent p-4 md:px-8 pb-6 pointer-events-auto">
         <div className="mb-4">
           {title && (
             <h2 className="text-xl font-bold text-white mb-1 shadow-black drop-shadow-md">
@@ -137,7 +139,7 @@ export function ControlsOverlay({
         </div>
 
         <div className="mb-4">
-          <ProgressBar videoRef={videoRef} vttUrl={vttUrl} />
+          <ProgressBar videoRef={videoRef} vttUrl={vttUrl} hqVttUrl={hqVttUrl} />
         </div>
 
         <div className="flex items-center justify-between">

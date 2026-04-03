@@ -5,6 +5,7 @@ import {
 	DeleteObjectsCommand,
 	GetObjectCommand,
 	HeadObjectCommand,
+	ListObjectsV2Command,
 	ListPartsCommand,
 	PutObjectCommand,
 	S3Client,
@@ -195,6 +196,39 @@ export async function deleteObjects(
 			})
 		);
 	}
+}
+
+export async function listObjectKeysByPrefix(
+	prefix: string,
+	which: 'input' | 'output' = 'input',
+): Promise<string[]> {
+	const keys: string[] = [];
+	let continuationToken: string | undefined;
+	const bucketName = bucket(which);
+
+	for (;;) {
+		const response = await s3.send(
+			new ListObjectsV2Command({
+				Bucket: bucketName,
+				Prefix: prefix,
+				ContinuationToken: continuationToken,
+			}),
+		);
+
+		for (const obj of response.Contents ?? []) {
+			if (obj.Key) {
+				keys.push(obj.Key);
+			}
+		}
+
+		if (!response.IsTruncated || !response.NextContinuationToken) {
+			break;
+		}
+
+		continuationToken = response.NextContinuationToken;
+	}
+
+	return keys;
 }
 
 export { s3 as s3Client };

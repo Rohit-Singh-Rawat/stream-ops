@@ -12,6 +12,7 @@ export interface VideoPlayerProps {
   description?: string;
   poster?: string;
   vttUrl?: string;
+  hqVttUrl?: string;
   onBack?: () => void;
   className?: string;
 }
@@ -28,6 +29,7 @@ export default function VideoPlayer({
   description,
   poster,
   vttUrl,
+  hqVttUrl,
   onBack,
   className,
 }: VideoPlayerProps) {
@@ -233,6 +235,7 @@ export default function VideoPlayer({
         title={title}
         description={description}
         vttUrl={vttUrl}
+        hqVttUrl={hqVttUrl}
         onBack={onBack}
         qualityOptions={qualityOptions}
         selectedQuality={selectedQuality}

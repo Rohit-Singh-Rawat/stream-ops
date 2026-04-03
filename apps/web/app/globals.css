@@ -166,6 +166,23 @@
   .animate-progress {
     animation: progress-loading 2s infinite ease-in-out;
   }
+
+  @keyframes hq-reveal {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  /* Fades the HQ sprite layer in over the LQ layer once the HQ sprite page loads */
+  .animate-hq-reveal {
+    animation: hq-reveal 200ms ease forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-hq-reveal {
+      animation: none;
+      opacity: 1;
+    }
+  }
 }
 
 :root {

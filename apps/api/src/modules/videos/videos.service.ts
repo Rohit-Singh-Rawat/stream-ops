@@ -1,11 +1,15 @@
-import { db, eq, videos } from "@stream-ops/db";
+import path from "path";
+import { db, eq, videos, videoRenditions } from "@stream-ops/db";
+import { desc } from "drizzle-orm";
 import {
   ACTIVE_VIDEO_STATUSES,
+  type GetVideoResponse,
   type ListVideosResponse,
   type VideoCollectionSummary,
+  type VideoRendition,
   type VideoSummary,
 } from "@stream-ops/types";
-import { desc, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import {
   generateUploadUrl,
   createMultipartUpload,
@@ -13,6 +17,8 @@ import {
   computeMultipartPlan,
   abortMultipartUpload,
   completeMultipartUpload,
+  deleteObjects,
+  listObjectKeysByPrefix,
 } from "../../config/s3";
 import { env } from "../../config/env";
 import { sendTranscodeJob } from "../../config/sqs";
@@ -47,6 +53,8 @@ const videoSummaryColumns = {
   type: videos.mimeType,
   status: videos.status,
   sourceSizeBytes: videos.sourceSizeBytes,
+  posterUrl: videos.posterUrl,
+  posterThumbUrl: videos.posterThumbUrl,
   createdAt: videos.createdAt,
   updatedAt: videos.updatedAt,
 } as const;
@@ -57,6 +65,8 @@ type VideoSummaryRow = {
   type: string;
   status: VideoSummary["status"];
   sourceSizeBytes: bigint | null;
+  posterUrl: string | null;
+  posterThumbUrl: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -69,6 +79,8 @@ function videoSummary(row: VideoSummaryRow): VideoSummary {
     type: row.type,
     status: row.status,
     size: Number(n),
+    posterUrl: row.posterUrl,
+    posterThumbUrl: row.posterThumbUrl,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -166,13 +178,27 @@ export class VideosService {
     };
   }
 
-  public async getVideoById(videoId: string): Promise<VideoSummary | null> {
-    const [row] = await db
-      .select(videoSummaryColumns)
-      .from(videos)
-      .where(eq(videos.id, videoId))
-      .limit(1);
-    return row ? videoSummary(row) : null;
+  public async getVideoById(videoId: string): Promise<GetVideoResponse | null> {
+    const [videoRows, renditionRows] = await Promise.all([
+      db.select(videoSummaryColumns).from(videos).where(eq(videos.id, videoId)).limit(1),
+      db
+        .select({
+          name: videoRenditions.name,
+          height: videoRenditions.height,
+          bitrate: videoRenditions.bitrate,
+        })
+        .from(videoRenditions)
+        .where(eq(videoRenditions.videoId, videoId))
+        .orderBy(desc(videoRenditions.height)),
+    ]);
+
+    const row = videoRows[0];
+    if (!row) return null;
+
+    return {
+      video: videoSummary(row),
+      renditions: renditionRows satisfies VideoRendition[],
+    };
   }
 
   public async presignUpload(
@@ -292,5 +318,69 @@ export class VideosService {
     uploadId: string;
   }): Promise<void> {
     await abortMultipartUpload(params);
+  }
+
+  /**
+   * Deletes all videos and their associated S3 artifacts.
+   *
+   * This performs a best-effort cleanup of:
+   * - Original uploads (input bucket)
+   * - HLS renditions
+   * - Poster images
+   * - Preview thumbnails and VTT files
+   *
+   * S3 objects are removed before database rows so that a failure
+   * in storage cleanup does not silently leave large orphaned blobs.
+   */
+  public async deleteAllVideos(): Promise<{ deletedCount: number }> {
+    const rows = await db
+      .select({
+        id: videos.id,
+        sourceBucket: videos.sourceBucket,
+        sourceKey: videos.sourceKey,
+        playbackUrl: videos.playbackUrl,
+        thumbnailVttUrl: videos.thumbnailVttUrl,
+        posterUrl: videos.posterUrl,
+      })
+      .from(videos);
+
+    if (rows.length === 0) {
+      return { deletedCount: 0 };
+    }
+
+    const inputKeys: string[] = [];
+    const outputPrefixes = new Set<string>();
+
+    for (const row of rows) {
+      if (row.sourceKey) {
+        inputKeys.push(row.sourceKey);
+      }
+
+      if (row.playbackUrl) {
+        outputPrefixes.add(path.posix.dirname(row.playbackUrl));
+      }
+
+      if (row.thumbnailVttUrl) {
+        outputPrefixes.add(path.posix.dirname(row.thumbnailVttUrl));
+      }
+
+      if (row.posterUrl) {
+        outputPrefixes.add(path.posix.dirname(row.posterUrl));
+      }
+    }
+
+    if (inputKeys.length > 0) {
+      await deleteObjects(inputKeys, "input");
+    }
+
+    for (const prefix of outputPrefixes) {
+      const keys = await listObjectKeysByPrefix(prefix, "output");
+      if (keys.length > 0) {
+        await deleteObjects(keys, "output");
+      }
+    }
+
+    const deleted = await db.delete(videos).returning({ id: videos.id });
+    return { deletedCount: deleted.length };
   }
 }
