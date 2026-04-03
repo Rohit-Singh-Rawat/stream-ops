@@ -1,25 +1,25 @@
-import { cn } from "@/lib/utils";
+"use client"
 
-export interface SeparatorProps extends React.HTMLAttributes<HTMLDivElement> {
-  orientation?: "horizontal" | "vertical";
-}
+import { Separator as SeparatorPrimitive } from "@base-ui/react/separator"
 
-export function Separator({
+import { cn } from "@/lib/utils"
+
+function Separator({
   className,
   orientation = "horizontal",
   ...props
-}: Readonly<SeparatorProps>) {
+}: SeparatorPrimitive.Props) {
   return (
-    <div
-      aria-hidden="true"
-      data-orientation={orientation}
+    <SeparatorPrimitive
+      data-slot="separator"
+      orientation={orientation}
       className={cn(
-        orientation === "horizontal"
-          ? "h-px w-full bg-border/70"
-          : "h-full w-px bg-border/70",
-        className,
+        "shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch",
+        className
       )}
       {...props}
     />
-  );
+  )
 }
+
+export { Separator }

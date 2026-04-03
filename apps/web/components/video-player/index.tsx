@@ -66,6 +66,7 @@ export default function VideoPlayer({
       });
       hlsRef.current = hls;
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (!hls) return;
         const options = hls.levels
           .map((level, index) => ({
             value: index,
@@ -195,7 +196,7 @@ export default function VideoPlayer({
         "relative w-full bg-black overflow-hidden flex items-center justify-center group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
         isFullscreen
           ? "h-screen w-screen fixed inset-0 z-50 rounded-none"
-          : "aspect-video max-h-[85vh] rounded-2xl mx-auto shadow-2xl",
+          : "aspect-video max-h-[85vh] rounded-sm mx-auto shadow-2xl",
         !isControlsVisible && "cursor-none",
         className,
       )}

@@ -1,13 +1,6 @@
 "use client";
 
 import {
-  Cancel01Icon,
-  CheckmarkCircle01Icon,
-  Upload01Icon,
-  VideoReplayIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
   type ChangeEvent,
   type DragEvent,
   type KeyboardEvent,
@@ -15,334 +8,194 @@ import {
   useRef,
   useState,
 } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import Link from "next/link";
 import { useVideoUpload } from "@/hooks/use-video-upload";
 import { cn } from "@/lib/utils";
 import type { UploadItem } from "@/store/uploads";
+import { formatFileSize } from "@/lib/videos";
 
-interface UploadPanelProps {
-  title?: string;
-  description?: string;
-  className?: string;
-}
-
-const pipelineSteps = [
-  "Presign upload & transfer source",
-  "Queue transcoding & thumbnail generation",
-  "Publish HLS playback assets",
-] as const;
-
-function UploadProgressCard({ upload }: Readonly<{ upload: UploadItem }>) {
-  const progressPercent =
+function UploadProgress({ upload }: { upload: UploadItem }) {
+  const percent =
     upload.size > 0
       ? Math.min(Math.round((upload.progress / upload.size) * 100), 100)
       : 0;
+
+  const isUploading = upload.status === "uploading";
   const isCompleted = upload.status === "completed";
   const isFailed = upload.status === "failed";
+  const statusLabel = upload.status.toUpperCase();
+
+  const badgeClass = isCompleted
+    ? "border-emerald-500/20 bg-emerald-500/8 text-emerald-200"
+    : isFailed
+      ? "border-red-500/25 bg-red-500/8 text-red-200"
+      : "border-primary/25 bg-primary/6 text-primary/80";
 
   return (
-    <section
-      className="surface-card lift-hover rounded-[1.5rem] border border-border/70 bg-white/88 p-4 shadow-[0_18px_48px_rgba(23,30,46,0.08)]"
-      aria-live="polite"
-    >
-      <div className="flex items-center gap-4">
-        <div
-          className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-full",
-            isCompleted
-              ? "bg-primary text-primary-foreground"
-              : isFailed
-                ? "bg-destructive text-destructive-foreground"
-                : "bg-secondary text-secondary-foreground",
-          )}
-        >
-          {isCompleted ? (
-            <HugeiconsIcon
-              icon={CheckmarkCircle01Icon}
-              size={20}
-              aria-hidden="true"
-            />
-          ) : isFailed ? (
-            <HugeiconsIcon icon={Cancel01Icon} size={20} aria-hidden="true" />
-          ) : (
-            <HugeiconsIcon
-              icon={Upload01Icon}
-              size={20}
-              className="motion-safe:animate-pulse"
-              aria-hidden="true"
-            />
-          )}
+    <div className="mt-8 overflow-hidden rounded-md border border-white/5 bg-zinc-950/50 p-5 ring-1 ring-white/5 backdrop-blur">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-normal text-zinc-100">
+            {upload.name}
+          </h3>
+          <p className="mt-1 text-xs font-mono text-zinc-500">
+            {formatFileSize(upload.size)}
+          </p>
         </div>
 
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex items-baseline justify-between gap-3">
-            <p
-              className="truncate text-sm font-medium text-foreground"
-              title={upload.name}
-            >
-              {upload.name}
-            </p>
-            <span className="text-xs font-medium tabular-nums text-muted-foreground">
-              {progressPercent}%
-            </span>
-          </div>
-
-          <div className="relative h-2 overflow-hidden rounded-full bg-secondary">
-            <div
-              className={cn(
-                "absolute inset-y-0 left-0 w-full origin-left rounded-full transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                isFailed ? "bg-destructive" : "bg-primary",
-              )}
-              style={{ transform: `scaleX(${progressPercent / 100})` }}
-            />
-          </div>
-
-          <div className="mt-3 flex items-center justify-between text-xs font-medium capitalize text-muted-foreground">
-            <span>{(upload.size / (1024 * 1024)).toFixed(1)}&nbsp;MB</span>
-            <span>{upload.status}</span>
-          </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-normal text-zinc-400 tabular-nums">
+            {percent}%
+          </span>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-normal uppercase tracking-[0.22em]",
+              badgeClass,
+            )}
+          >
+            {statusLabel}
+          </span>
         </div>
       </div>
-    </section>
+
+      <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-zinc-900/70">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all duration-300 ease-out",
+            isFailed ? "bg-red-500" : isCompleted ? "bg-green-500" : "bg-primary",
+          )}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs font-normal text-zinc-500">
+          {isUploading
+            ? "Uploading to storage. Pipeline starts after upload finishes."
+            : isCompleted
+              ? "Upload complete. Opening the video page…"
+              : "Upload failed. Try again with a different file."}
+        </p>
+
+        {isCompleted ? (
+          <Link
+            href={`/videos/${upload.id}`}
+            className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-normal text-zinc-200 transition-colors hover:bg-white/10"
+          >
+            Open video
+          </Link>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
-function UploadDropzone({
-  isUploading,
-  onFilesDrop,
-}: Readonly<{
-  isUploading: boolean;
-  onFilesDrop: (files: FileList) => void;
-}>) {
+export function UploadPanel() {
+  const { activeUpload, handleFilesDrop, isUploading } = useVideoUpload();
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDragOver = useCallback(
-    (event: DragEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      if (!isUploading) {
-        setIsDragging(true);
-      }
-    },
-    [isUploading],
-  );
+  const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (!isUploading) setIsDragging(true);
+  }, [isUploading]);
 
-  const handleDragLeave = useCallback((event: DragEvent<HTMLButtonElement>) => {
+  const handleDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setIsDragging(false);
   }, []);
 
-  const handleDrop = useCallback(
-    (event: DragEvent<HTMLButtonElement>) => {
+  const handleDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    if (!isUploading && event.dataTransfer.files.length > 0) {
+      handleFilesDrop(event.dataTransfer.files);
+    }
+  }, [isUploading, handleFilesDrop]);
+
+  const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files?.length) {
+      handleFilesDrop(event.target.files);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, [handleFilesDrop]);
+
+  const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if ((event.key === "Enter" || event.key === " ") && !isUploading) {
       event.preventDefault();
-      setIsDragging(false);
-
-      if (isUploading || event.dataTransfer.files.length === 0) {
-        return;
-      }
-
-      onFilesDrop(event.dataTransfer.files);
-    },
-    [isUploading, onFilesDrop],
-  );
-
-  const handleFileChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      if (event.target.files?.length) {
-        onFilesDrop(event.target.files);
-      }
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    },
-    [onFilesDrop],
-  );
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLButtonElement>) => {
-      if ((event.key === "Enter" || event.key === " ") && !isUploading) {
-        event.preventDefault();
-        fileInputRef.current?.click();
-      }
-    },
-    [isUploading],
-  );
+      fileInputRef.current?.click();
+    }
+  }, [isUploading]);
 
   return (
-    <>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="video/mp4,video/webm"
-        className="hidden"
-        onChange={handleFileChange}
-        disabled={isUploading}
-      />
-
-      <button
-        type="button"
-        aria-label="Upload a video file"
-        aria-disabled={isUploading}
+    <div className="mx-auto max-w-3xl">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label="Upload video file"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => !isUploading && fileInputRef.current?.click()}
         onKeyDown={handleKeyDown}
         className={cn(
-          "press-feedback group relative flex min-h-[320px] w-full flex-col items-center justify-center overflow-hidden rounded-[2rem] border border-dashed p-10 text-center",
+          "group flex min-h-[400px] cursor-pointer flex-col items-center justify-center rounded-md transition-all duration-300 ease-out",
           isUploading
-            ? "cursor-not-allowed border-border/50 bg-secondary/20 opacity-60"
-            : "border-border/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(242,235,226,0.92))] shadow-[0_22px_80px_rgba(23,30,46,0.08)]",
-          isDragging && !isUploading && "border-primary/60 bg-primary/8",
+            ? "cursor-not-allowed opacity-70"
+            : isDragging
+            ? "bg-zinc-950/70 ring-2 ring-primary/60 backdrop-blur"
+            : "bg-zinc-950/50 ring-1 ring-white/10 backdrop-blur hover:ring-white/20"
         )}
       >
-        <div className="pointer-events-none absolute inset-x-[16%] top-0 h-32 rounded-full bg-[radial-gradient(circle,rgba(219,175,77,0.18),transparent_70%)] blur-2xl" />
-
-        <div
-          className={cn(
-            "mb-6 flex size-16 items-center justify-center rounded-[1.5rem] border border-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-            isUploading
-              ? "bg-secondary text-muted-foreground"
-              : isDragging
-                ? "scale-[1.04] bg-primary text-primary-foreground"
-                : "bg-white/85 text-foreground group-hover:scale-[1.04] group-hover:bg-primary group-hover:text-primary-foreground",
-          )}
-        >
-          <HugeiconsIcon icon={Upload01Icon} size={30} aria-hidden="true" />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="video/mp4,video/webm"
+          className="hidden"
+          onChange={handleFileChange}
+          disabled={isUploading}
+        />
+        <div className="flex size-16 items-center justify-center rounded-full bg-zinc-900/50 text-zinc-400 ring-1 ring-white/10 group-hover:text-zinc-100 transition-colors">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={cn("transition-transform duration-500", isDragging && "scale-110", !isDragging && "group-hover:-translate-y-1")}
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" x2="12" y1="3" y2="15" />
+          </svg>
         </div>
+        
+        <h2 className="mt-6 text-xl font-light tracking-tight text-zinc-100">
+          {isUploading
+            ? "Uploading…"
+            : isDragging
+              ? "Drop your video file here"
+              : "Click to select or drag a file"}
+        </h2>
+        <p className="mt-2 text-sm font-normal text-zinc-500">
+          {isUploading ? "Uploading to storage…" : "Accepts MP4 and WebM up to 2GB"}
+        </p>
 
-        <span className="font-display text-balance text-3xl font-semibold tracking-[-0.04em] text-foreground">
-          {isDragging ? "Release to Start Ingest" : "Drop a Master File"}
-        </span>
-        <span className="mt-3 max-w-[25rem] text-pretty text-sm leading-6 text-muted-foreground">
-          Supports MP4 and WebM uploads up to 2&nbsp;GB. The system will queue
-          transcoding, generate scrubbing previews, and publish the playback
-          package automatically.
-        </span>
-
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-          <Badge className="bg-white/75">MP4</Badge>
-          <Badge className="bg-white/75">WebM</Badge>
-          <Badge className="bg-white/75">Auto Queue</Badge>
-          <Badge className="bg-white/75">Preview Thumbnails</Badge>
-        </div>
-      </button>
-    </>
-  );
-}
-
-export function UploadPanel({
-  title = "Upload a New Asset",
-  description = "Move from source file to playback package without leaving the workspace.",
-  className,
-}: Readonly<UploadPanelProps>) {
-  const { activeUpload, handleFilesDrop, isUploading } = useVideoUpload();
-
-  return (
-    <section
-      className={cn(
-        "surface-card rounded-[2.1rem] border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(248,243,235,0.93))] p-6 shadow-[0_24px_80px_rgba(23,30,46,0.08)] backdrop-blur",
-        className,
-      )}
-      aria-labelledby="upload-panel-title"
-    >
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr] xl:items-start">
-        <div className="space-y-6">
-          <div className="flex items-start gap-4">
-            <div className="flex size-12 items-center justify-center rounded-2xl border border-white/45 bg-white/80 text-foreground shadow-[0_18px_46px_rgba(23,30,46,0.08)]">
-              <HugeiconsIcon
-                icon={VideoReplayIcon}
-                size={22}
-                aria-hidden="true"
-              />
-            </div>
-            <div className="space-y-2">
-              <Badge variant="secondary" className="w-fit">
-                Ingest Workspace
-              </Badge>
-              <div>
-                <h2
-                  id="upload-panel-title"
-                  className="font-display text-3xl font-semibold tracking-[-0.04em] text-foreground"
-                >
-                  {title}
-                </h2>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                  {description}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <UploadDropzone
-            isUploading={isUploading}
-            onFilesDrop={handleFilesDrop}
-          />
-        </div>
-
-        <div className="space-y-4">
-          <section className="surface-card rounded-[1.7rem] border border-border/70 bg-white/86 p-5">
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-              What Happens Next
-            </p>
-            <ol className="mt-4 flex flex-col gap-4">
-              {pipelineSteps.map((step, index) => (
-                <li key={step} className="flex gap-3">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
-                    {index + 1}
-                  </span>
-                  <p className="pt-1 text-sm leading-6 text-foreground">
-                    {step}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          </section>
-
-          <section className="surface-card rounded-[1.7rem] border border-border/70 bg-white/86 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                Accepted Sources
-              </p>
-              <Badge>2&nbsp;GB Max</Badge>
-            </div>
-
-            <Separator className="my-4" />
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-[1.25rem] bg-secondary/55 p-4">
-                <p className="text-sm font-medium text-foreground">Playback</p>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  HLS output with scrub thumbnails and route-ready detail pages.
-                </p>
-              </div>
-              <div className="rounded-[1.25rem] bg-secondary/55 p-4">
-                <p className="text-sm font-medium text-foreground">Tracking</p>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  Status stays visible in the dashboard and full library.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {activeUpload ? (
-            <UploadProgressCard upload={activeUpload} />
-          ) : (
-            <section className="surface-card rounded-[1.7rem] border border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.88),rgba(232,241,244,0.78))] p-5">
-              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                Ready to Queue
-              </p>
-              <p className="mt-3 text-sm leading-6 text-foreground">
-                Drop a source file and the app will route you directly to the
-                live video detail page while the pipeline keeps working in the
-                background.
-              </p>
-            </section>
-          )}
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-[11px] font-normal uppercase tracking-[0.22em] text-zinc-500">
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+            MP4 / WebM
+          </span>
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+            Max 2GB
+          </span>
         </div>
       </div>
-    </section>
+
+      {activeUpload && <UploadProgress upload={activeUpload} />}
+    </div>
   );
 }
