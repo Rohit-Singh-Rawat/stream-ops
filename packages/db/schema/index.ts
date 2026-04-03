@@ -42,6 +42,8 @@ export const videos = pgTable("videos", {
 
 	playbackUrl: text("playback_url"),
 	thumbnailVttUrl: text("thumbnail_vtt_url"),
+	posterUrl: text("poster_url"),
+	posterThumbUrl: text("poster_thumb_url"),
 
 	latestJobId: uuid("latest_job_id"),
 
@@ -87,7 +89,8 @@ export const videoRenditions = pgTable("video_renditions", {
 		.references(() => videoJobs.id, { onDelete: "cascade" }),
 
 	name: text("name").notNull(),
-	width: integer("width").notNull(),
+	// width is nullable — output width depends on source aspect ratio (scale=-2:height)
+	width: integer("width"),
 	height: integer("height").notNull(),
 	bitrate: integer("bitrate"),
 

@@ -24,8 +24,16 @@ export interface VideoSummary {
   size: number;
   type: string;
   status: VideoStatus;
+  posterUrl: string | null;
+  posterThumbUrl: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface VideoRendition {
+  name: string;
+  height: number;
+  bitrate: number | null;
 }
 
 export interface VideoCollectionSummary {
@@ -42,4 +50,5 @@ export interface ListVideosResponse {
 
 export interface GetVideoResponse {
   video: VideoSummary;
+  renditions: VideoRendition[];
 }

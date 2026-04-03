@@ -1,5 +1,5 @@
 {
-  "id": "01690c13-eda6-4791-9ae2-399114ce404f",
+  "id": "022588de-f37f-43c6-a31c-5ec8db37d52a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -142,7 +142,7 @@
           "name": "width",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "height": {
           "name": "height",
@@ -312,6 +312,18 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "status": {
           "name": "status",
           "type": "video_status",
@@ -364,6 +376,18 @@
         },
         "thumbnail_vtt_url": {
           "name": "thumbnail_vtt_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "poster_url": {
+          "name": "poster_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "poster_thumb_url": {
+          "name": "poster_thumb_url",
           "type": "text",
           "primaryKey": false,
           "notNull": false

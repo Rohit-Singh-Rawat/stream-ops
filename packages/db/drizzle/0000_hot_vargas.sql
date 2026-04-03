@@ -20,7 +20,7 @@ CREATE TABLE "video_renditions" (
 	"video_id" uuid NOT NULL,
 	"job_id" uuid NOT NULL,
 	"name" text NOT NULL,
-	"width" integer NOT NULL,
+	"width" integer,
 	"height" integer NOT NULL,
 	"bitrate" integer,
 	"playlist_url" text NOT NULL,
@@ -41,6 +41,8 @@ CREATE TABLE "video_thumbnails" (
 --> statement-breakpoint
 CREATE TABLE "videos" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"name" text NOT NULL,
+	"mime_type" text NOT NULL,
 	"status" "video_status" DEFAULT 'created' NOT NULL,
 	"source_bucket" text,
 	"source_key" text,
@@ -50,6 +52,8 @@ CREATE TABLE "videos" (
 	"height" integer,
 	"playback_url" text,
 	"thumbnail_vtt_url" text,
+	"poster_url" text,
+	"poster_thumb_url" text,
 	"latest_job_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL

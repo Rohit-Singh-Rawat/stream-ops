@@ -1,1 +1,0 @@
-ALTER TABLE "videos" ADD COLUMN "mime_type" text NOT NULL;
