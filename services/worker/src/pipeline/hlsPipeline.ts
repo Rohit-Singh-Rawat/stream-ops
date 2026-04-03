@@ -1,4 +1,5 @@
 import { log } from '@stream-ops/logger';
+import type { EncodingRendition } from '../encoding/transcode';
 import { runFFmpeg } from '../encoding/transcode';
 import { uploadDirectory } from '../infra/s3';
 import { outputKeyPrefixForTranscode } from '../paths';
@@ -9,16 +10,19 @@ export interface HlsPipelineParams {
 	outputBucket: string;
 	objectKey: string;
 	videoId: string;
+	inputHeight: number;
 }
 
 export async function runHlsEncode({
 	inputPath,
 	outputDir,
 	videoId,
-}: Pick<HlsPipelineParams, 'inputPath' | 'outputDir' | 'videoId'>): Promise<void> {
+	inputHeight,
+}: Pick<HlsPipelineParams, 'inputPath' | 'outputDir' | 'videoId' | 'inputHeight'>): Promise<EncodingRendition[]> {
 	const start = Date.now();
-	await runFFmpeg(inputPath, outputDir);
-	log({ stage: 'transcode_complete', videoId, durationMs: Date.now() - start });
+	const renditions = await runFFmpeg(inputPath, outputDir, inputHeight);
+	log({ stage: 'transcode_complete', videoId, renditionCount: renditions.length, durationMs: Date.now() - start });
+	return renditions;
 }
 
 export async function uploadHlsPackage({

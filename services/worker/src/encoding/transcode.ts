@@ -1,133 +1,116 @@
-import { spawn, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
+import { runProcess } from '../infra/ffmpeg';
 
-export function runFFmpeg(inputPath: string, outputDir: string): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const hasAudio = inputHasAudioStream(inputPath);
+export interface EncodingRendition {
+	name: string;
+	height: number;
+	bitrate: number;
+	/** 0-based stream index in the HLS multi-variant output (%v in ffmpeg segment pattern) */
+	index: number;
+}
 
-		const args = [
-			'-y', // overwrite existing outputs
+type LadderRung = {
+	readonly name: string;
+	readonly height: number;
+	readonly bitrate: number;
+	readonly maxrate: number;
+	readonly bufsize: number;
+};
 
-			'-i',
-			inputPath,
+// Ordered highest to lowest — filter preserves this order so the master manifest
+// lists the highest quality rendition first (expected by most HLS players).
+const ENCODING_LADDER: readonly LadderRung[] = [
+	{ name: '1080p', height: 1080, bitrate: 5000, maxrate: 5350, bufsize: 7500 },
+	{ name: '720p',  height: 720,  bitrate: 2800, maxrate: 3000, bufsize: 4200 },
+	{ name: '480p',  height: 480,  bitrate: 1400, maxrate: 1500, bufsize: 2100 },
+	{ name: '360p',  height: 360,  bitrate: 800,  maxrate: 860,  bufsize: 1200 },
+];
 
-			// split input video to 3 streams; scale to 1080p / 720p / 480p
-			'-filter_complex',
-			[
-				'[0:v]split=3[v1][v2][v3]',
-				'[v1]scale=w=1920:h=1080[v1out]',
-				'[v2]scale=w=1280:h=720[v2out]',
-				'[v3]scale=w=854:h=480[v3out]',
-			].join(';'),
+// Always returns at least the lowest rung to handle sub-360p inputs.
+function getEncodingLadder(inputHeight: number): readonly LadderRung[] {
+	const filtered = ENCODING_LADDER.filter((r) => r.height <= inputHeight);
+	return filtered.length > 0 ? filtered : [ENCODING_LADDER[ENCODING_LADDER.length - 1]!];
+}
 
-			// stream 0: 1080p libx264 (+audio if present)
-			'-map',
-			'[v1out]', // map the 1080p scaled video stream
-			...(hasAudio ? ['-map', '0:a:0'] : []), // map source audio only when present
-			'-c:v:0',
-			'libx264', // use H.264 codec for first video stream
-			'-b:v:0',
-			'5000k', // target bitrate: 5 Mbps for 1080p
-			'-maxrate:v:0',
-			'5350k', // max bitrate cap (allows ~7% headroom for VBV)
-			'-bufsize:v:0',
-			'7500k', // VBV buffer size (1.5x target for smooth rate control)
+// When there is only one rendition, skip the split filter entirely (simpler graph).
+// With multiple renditions, split=N creates N copies of the decoded stream so each
+// scale filter gets its own branch — required for correctness in filter_complex.
+function buildFilterComplex(ladder: readonly LadderRung[]): string {
+	if (ladder.length === 1) {
+		return `[0:v]scale=-2:${ladder[0]!.height}[v0]`;
+	}
+	const split = `[0:v]split=${ladder.length}${ladder.map((_, i) => `[s${i}]`).join('')}`;
+	const scales = ladder.map((r, i) => `[s${i}]scale=-2:${r.height}[v${i}]`);
+	return [split, ...scales].join(';');
+}
 
-			// stream 1: 720p libx264 (+audio if present)
-			'-map',
-			'[v2out]',
-			...(hasAudio ? ['-map', '0:a:0'] : []),
-			'-c:v:1',
-			'libx264',
-			'-b:v:1',
-			'2800k',
-			'-maxrate:v:1',
-			'3000k',
-			'-bufsize:v:1',
-			'4200k',
+export async function runFFmpeg(
+	inputPath: string,
+	outputDir: string,
+	inputHeight: number,
+): Promise<EncodingRendition[]> {
+	const hasAudio = inputHasAudioStream(inputPath);
+	const ladder = getEncodingLadder(inputHeight);
 
-			// stream 2: 480p libx264 (+audio if present)
-			'-map',
-			'[v3out]',
-			...(hasAudio ? ['-map', '0:a:0'] : []),
-			'-c:v:2',
-			'libx264',
-			'-b:v:2',
-			'1400k',
-			'-maxrate:v:2',
-			'1500k',
-			'-bufsize:v:2',
-			'2100k',
+	// One -map block per rendition: video stream from filter graph + source audio (if present).
+	// -c:v:i, -b:v:i, -maxrate:v:i, -bufsize:v:i apply per output stream index.
+	// maxrate ~7% above target + bufsize 1.5× target = standard VBV config for smooth rate control.
+	const perStreamArgs = ladder.flatMap((r, i) => [
+		'-map', `[v${i}]`,
+		...(hasAudio ? ['-map', '0:a:0'] : []),
+		`-c:v:${i}`, 'libx264',
+		`-b:v:${i}`, `${r.bitrate}k`,
+		`-maxrate:v:${i}`, `${r.maxrate}k`,
+		`-bufsize:v:${i}`, `${r.bufsize}k`,
+	]);
 
-			// x264 options apply to all video outputs
-			'-preset',
-			'veryfast',
-			'-profile:v',
-			'main',
-			'-sc_threshold',
-			'0', // disable x264 scenecut keyframes
+	// v:i,a:i pairs tell ffmpeg which video and audio stream belong to each HLS variant.
+	const varStreamMap = ladder
+		.map((_, i) => (hasAudio ? `v:${i},a:${i}` : `v:${i}`))
+		.join(' ');
 
-			'-g',
-			'48', // GOP size / max keyframe interval (frames)
-			'-keyint_min',
-			'48',
+	const args = [
+		'-y',
+		'-i', inputPath,
+		'-filter_complex', buildFilterComplex(ladder),
+		...perStreamArgs,
+		'-preset', 'veryfast',        // encoding speed vs. compression tradeoff
+		'-profile:v', 'main',         // H.264 Main profile — broad device compatibility
+		'-sc_threshold', '0',         // disable x264 scenecut — keeps GOP boundaries predictable for HLS
+		'-g', '48',                   // GOP size: keyframe every 48 frames (2s at 24fps)
+		'-keyint_min', '48',          // enforce minimum distance between keyframes
+		...(hasAudio ? ['-c:a', 'aac', '-b:a', '128k'] : []),
+		'-f', 'hls',
+		'-hls_time', '6',             // target segment duration in seconds
+		'-hls_playlist_type', 'vod',  // write #EXT-X-ENDLIST — signals complete file to players
+		'-hls_flags', 'independent_segments', // each segment starts with an IDR frame
+		'-hls_segment_filename', `${outputDir}/%v/segment_%03d.ts`, // %v = variant stream index
+		'-master_pl_name', 'master.m3u8',
+		'-var_stream_map', varStreamMap,
+		`${outputDir}/%v/prog.m3u8`,  // per-variant media playlist
+	];
 
-			// audio: one mapped stream per output variant when input has audio
-			...(hasAudio
-				? [
-						'-c:a',
-						'aac',
-						'-b:a',
-						'128k',
-					]
-				: []),
+	await runProcess('ffmpeg', args);
 
-			'-f',
-			'hls',
-			'-hls_time',
-			'6', // segment duration (seconds)
-			'-hls_playlist_type',
-			'vod',
-
-			'-hls_flags',
-			'independent_segments', // require IDR at segment start
-
-			'-hls_segment_filename',
-			`${outputDir}/%v/segment_%03d.ts`, // %v = variant index
-
-			'-master_pl_name',
-			'master.m3u8',
-
-			'-var_stream_map',
-			hasAudio ? 'v:0,a:0 v:1,a:1 v:2,a:2' : 'v:0 v:1 v:2', // audio variants only if source has audio
-
-			`${outputDir}/%v/prog.m3u8`, // variant media playlists
-		];
-
-		const ff = spawn('ffmpeg', args);
-
-		ff.on('close', (code) => {
-			if (code === 0) resolve();
-			else reject(new Error(`FFmpeg failed with code ${code}`));
-		});
-	});
+	return ladder.map((r, i) => ({
+		name: r.name,
+		height: r.height,
+		bitrate: r.bitrate,
+		index: i,
+	}));
 }
 
 function inputHasAudioStream(inputPath: string): boolean {
 	const probe = spawnSync(
 		'ffprobe',
 		[
-			'-v',
-			'error',
-			'-select_streams',
-			'a:0',
-			'-show_entries',
-			'stream=codec_type',
-			'-of',
-			'default=noprint_wrappers=1:nokey=1',
+			'-v', 'error',
+			'-select_streams', 'a:0',
+			'-show_entries', 'stream=codec_type',
+			'-of', 'default=noprint_wrappers=1:nokey=1',
 			inputPath,
 		],
 		{ encoding: 'utf8' },
 	);
-
 	return probe.status === 0 && probe.stdout.trim().length > 0;
 }

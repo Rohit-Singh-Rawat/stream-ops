@@ -1,32 +1,39 @@
-import { spawn } from 'child_process';
+import { runProcess } from '../infra/ffmpeg';
 
-export function getVideoDuration(inputPath: string): Promise<number> {
-	return new Promise((resolve, reject) => {
-		const args = [
-			'-v',
-			'error',
-			'-show_entries',
-			'format=duration',
-			'-of',
-			'default=noprint_wrappers=1:nokey=1',
-			inputPath,
-		];
+export interface VideoInfo {
+	durationSeconds: number;
+	width: number;
+	height: number;
+}
 
-		const child = spawn('ffprobe', args);
+/**
+ * Probes duration and source dimensions in a single ffprobe pass.
+ * Uses JSON output to read both format (duration) and stream (width/height) in one call.
+ */
+export async function getVideoInfo(inputPath: string): Promise<VideoInfo> {
+	const output = await runProcess('ffprobe', [
+		'-v', 'error',
+		'-select_streams', 'v:0',
+		'-show_entries', 'format=duration:stream=width,height',
+		'-of', 'json',
+		inputPath,
+	]);
 
-		let output = '';
+	const parsed = JSON.parse(output) as {
+		streams: Array<{ width?: number; height?: number }>;
+		format: { duration?: string };
+	};
 
-		child.stdout.on('data', (data) => {
-			output += data.toString();
-		});
+	const stream = parsed.streams[0];
+	const duration = parsed.format?.duration;
 
-		child.on('close', (code) => {
-			if (code !== 0) {
-				reject(new Error(`ffprobe failed with code ${code}`));
-				return;
-			}
+	if (!stream?.width || !stream?.height || !duration) {
+		throw new Error(`ffprobe: could not read video dimensions or duration from ${inputPath}`);
+	}
 
-			resolve(Math.ceil(Number(output.trim())));
-		});
-	});
+	return {
+		durationSeconds: Math.ceil(Number(duration)),
+		width: stream.width,
+		height: stream.height,
+	};
 }

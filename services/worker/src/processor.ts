@@ -6,11 +6,10 @@ import { downloadFile } from './infra/s3';
 import { outputKeyPrefixForTranscode, thumbnailKeyPrefix } from './paths';
 import { runHlsEncode, uploadHlsPackage } from './pipeline/hlsPipeline';
 import { runThumbnailVttGeneration, uploadThumbnailVttPackage } from './pipeline/thumbnailVttPipeline';
-import { getVideoDuration } from './encoding/duration';
-
-const VTT_INTERVAL_SEC = 10;
-const THUMB_WIDTH = 160;
-const THUMB_HEIGHT = 90;
+import type { UploadedThumbnailKeys } from './pipeline/thumbnailVttPipeline';
+import { runPosterGeneration, uploadPosterPackage } from './pipeline/posterPipeline';
+import type { EncodingRendition } from './encoding/transcode';
+import { getVideoInfo } from './encoding/duration';
 
 export interface ProcessVideoInput {
 	videoId: string;
@@ -23,8 +22,7 @@ interface Workspace {
 	baseDir: string;
 	outputDir: string;
 	thumbnailsDir: string;
-	spritePath: string;
-	vttPath: string;
+	postersDir: string;
 }
 
 function buildWorkspace(videoId: string): Workspace {
@@ -33,8 +31,7 @@ function buildWorkspace(videoId: string): Workspace {
 		baseDir,
 		outputDir: path.join(baseDir, 'hls'),
 		thumbnailsDir: path.join(baseDir, 'thumbnails'),
-		spritePath: path.join(baseDir, 'thumbnails', 'sprite.jpg'),
-		vttPath: path.join(baseDir, 'thumbnails', 'thumbnails.vtt'),
+		postersDir: path.join(baseDir, 'poster'),
 	};
 }
 
@@ -74,12 +71,28 @@ async function markJobSucceeded(
 	jobId: string,
 	videoId: string,
 	playbackUrl: string,
-	thumbnailVttUrl: string,
+	thumbnailVttUrl: string | null,
+	posterUrl: string,
+	posterThumbUrl: string,
 	durationSeconds: number,
+	sourceWidth: number,
+	sourceHeight: number,
 ): Promise<void> {
 	const now = new Date();
 	await db.update(videoJobs).set({ status: 'succeeded', completedAt: now }).where(eq(videoJobs.id, jobId));
-	await db.update(videos).set({ status: 'ready', playbackUrl, thumbnailVttUrl, durationSeconds }).where(eq(videos.id, videoId));
+	await db
+		.update(videos)
+		.set({
+			status: 'ready',
+			playbackUrl,
+			thumbnailVttUrl,
+			posterUrl,
+			posterThumbUrl,
+			durationSeconds,
+			width: sourceWidth,
+			height: sourceHeight,
+		})
+		.where(eq(videos.id, videoId));
 }
 
 async function markJobFailed(jobId: string, videoId: string, errorMessage: string): Promise<void> {
@@ -88,35 +101,42 @@ async function markJobFailed(jobId: string, videoId: string, errorMessage: strin
 	await db.update(videos).set({ status: 'failed' }).where(eq(videos.id, videoId));
 }
 
-async function insertRenditions(videoId: string, jobId: string, outputPrefix: string): Promise<void> {
-	const renditions = [
-		{ name: '1080p', width: 1920, height: 1080, bitrate: 5000 },
-		{ name: '720p', width: 1280, height: 720, bitrate: 2800 },
-		{ name: '480p', width: 854, height: 480, bitrate: 1400 },
-	] as const;
-
+async function insertRenditions(
+	videoId: string,
+	jobId: string,
+	renditions: EncodingRendition[],
+	outputPrefix: string,
+): Promise<void> {
 	await db.insert(videoRenditions).values(
 		renditions.map((r) => ({
 			videoId,
 			jobId,
 			name: r.name,
-			width: r.width,
 			height: r.height,
 			bitrate: r.bitrate,
-			playlistUrl: `${outputPrefix}/${r.height}p/prog.m3u8`,
+			// %v in the ffmpeg segment pattern maps to the 0-based stream index
+			playlistUrl: `${outputPrefix}/${r.index}/prog.m3u8`,
 		})),
 	);
 }
 
-async function insertThumbnailRecord(videoId: string, jobId: string, spriteUrl: string, vttUrl: string): Promise<void> {
+async function insertThumbnailRecord(
+	videoId: string,
+	jobId: string,
+	spriteUrl: string,
+	vttUrl: string,
+	intervalSeconds: number,
+	width: number,
+	height: number,
+): Promise<void> {
 	await db.insert(videoThumbnails).values({
 		videoId,
 		jobId,
 		spriteUrl,
 		vttUrl,
-		intervalSeconds: VTT_INTERVAL_SEC,
-		width: THUMB_WIDTH,
-		height: THUMB_HEIGHT,
+		intervalSeconds: Math.round(intervalSeconds),
+		width,
+		height,
 	});
 }
 
@@ -139,37 +159,76 @@ export async function processVideo({ videoId, bucket, key, outputBucket }: Proce
 		log({ stage: 'download_complete', videoId, jobId, key, durationMs: Date.now() - dlStart });
 
 		const probeStart = Date.now();
-		const durationSeconds = await getVideoDuration(inputPath);
-		log({
-			stage: 'duration_probe_complete',
-			videoId,
-			jobId,
-			durationSeconds,
-			durationMs: Date.now() - probeStart,
-		});
+		const { durationSeconds, width: sourceWidth, height: sourceHeight } = await getVideoInfo(inputPath);
+		log({ stage: 'probe_complete', videoId, jobId, durationSeconds, sourceWidth, sourceHeight, durationMs: Date.now() - probeStart });
 
-		await runHlsEncode({ inputPath, outputDir: ws.outputDir, videoId });
-		await runThumbnailVttGeneration({
-			inputPath,
-			thumbnailsDir: ws.thumbnailsDir,
-			spritePath: ws.spritePath,
-			vttPath: ws.vttPath,
-			objectKey: key,
-			videoId,
-			durationSeconds,
-		});
+		// HLS encode, poster, and preview all read the same input independently — run concurrently.
+		// Preview is wrapped so its failure does not abort HLS delivery.
+		const [renditions, posterLocal, previewOutcome] = await Promise.all([
+			runHlsEncode({ inputPath, outputDir: ws.outputDir, videoId, inputHeight: sourceHeight }),
+			runPosterGeneration({ inputPath, postersDir: ws.postersDir, videoId, durationSeconds }),
+			runThumbnailVttGeneration({ inputPath, thumbnailsDir: ws.thumbnailsDir, videoId, durationSeconds })
+				.then((result) => ({ ok: true as const, result }))
+				.catch((err: unknown) => ({
+					ok: false as const,
+					error: err instanceof Error ? err.message : String(err),
+				})),
+		]);
 
-		await uploadHlsPackage({ outputDir: ws.outputDir, outputBucket, objectKey: key, videoId });
-		await uploadThumbnailVttPackage({ spritePath: ws.spritePath, vttPath: ws.vttPath, outputBucket, objectKey: key, videoId });
+		if (!previewOutcome.ok) {
+			log({ stage: 'preview_generation_failed', videoId, jobId, error: previewOutcome.error });
+		}
 
-		await insertRenditions(videoId, jobId, outputPrefix);
-		await insertThumbnailRecord(videoId, jobId, `${thumbPrefix}/sprite.jpg`, `${thumbPrefix}/thumbnails.vtt`);
+		// Upload HLS and poster unconditionally; preview only if generation succeeded
+		const [, { posterKey, posterThumbKey }] = await Promise.all([
+			uploadHlsPackage({ outputDir: ws.outputDir, outputBucket, objectKey: key, videoId }),
+			uploadPosterPackage({
+				posterPath: posterLocal.posterPath,
+				posterThumbPath: posterLocal.posterThumbPath,
+				outputBucket,
+				objectKey: key,
+				videoId,
+			}),
+		]);
+
+		let uploadedPreview: UploadedThumbnailKeys | null = null;
+		if (previewOutcome.ok) {
+			uploadedPreview = await uploadThumbnailVttPackage({
+				...previewOutcome.result,
+				outputBucket,
+				objectKey: key,
+				videoId,
+			});
+		}
+
+		await insertRenditions(videoId, jobId, renditions, outputPrefix);
+
+		if (previewOutcome.ok) {
+			await insertThumbnailRecord(
+				videoId,
+				jobId,
+				`${thumbPrefix}/sprite_lq_0.jpg`,
+				`${thumbPrefix}/thumbnails_lq.vtt`,
+				previewOutcome.result.spec.intervalSeconds,
+				previewOutcome.result.spec.lq.cellWidth,
+				previewOutcome.result.spec.lq.cellHeight,
+			);
+		}
 
 		const playbackUrl = `${outputPrefix}/master.m3u8`;
-		const thumbnailVttUrl = `${thumbPrefix}/thumbnails.vtt`;
-		await markJobSucceeded(jobId, videoId, playbackUrl, thumbnailVttUrl, durationSeconds);
+		await markJobSucceeded(
+			jobId,
+			videoId,
+			playbackUrl,
+			uploadedPreview?.lqVttKey ?? null,
+			posterKey,
+			posterThumbKey,
+			durationSeconds,
+			sourceWidth,
+			sourceHeight,
+		);
 
-		log({ stage: 'pipeline_complete', videoId, jobId, playbackUrl, thumbnailVttUrl });
+		log({ stage: 'pipeline_complete', videoId, jobId, playbackUrl });
 	} catch (err) {
 		const errorMessage = err instanceof Error ? err.message : String(err);
 		log({ stage: 'pipeline_failed', videoId, jobId, error: errorMessage });
