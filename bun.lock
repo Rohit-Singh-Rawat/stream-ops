@@ -21,6 +21,7 @@
         "@stream-ops/db": "workspace:*",
         "@stream-ops/types": "workspace:*",
         "aws-sdk": "^2.1693.0",
+        "drizzle-orm": "^0.45.1",
         "hono": "^4.12.8",
         "zod": "^4.3.6",
       },
@@ -114,6 +115,7 @@
       "name": "@stream-ops/worker",
       "dependencies": {
         "@aws-sdk/client-s3": "^3.1011.0",
+        "@aws-sdk/client-sqs": "^3.1011.0",
         "@aws-sdk/middleware-flexible-checksums": "^3.974.5",
         "@stream-ops/db": "workspace:*",
         "@stream-ops/logger": "workspace:*",

@@ -19,19 +19,27 @@ import {
 } from '../lib/constants';
 import { env } from './env';
 
-const s3 = new S3Client({
-	region: env.AWS_REGION,
-	...(env.AWS_ENDPOINT_URL && {
-		endpoint: env.AWS_ENDPOINT_URL,
-		forcePathStyle: true,
-	}),
-	requestChecksumCalculation: 'WHEN_REQUIRED',
-	responseChecksumValidation: 'WHEN_REQUIRED',
-	credentials: {
-		accessKeyId: env.AWS_ACCESS_KEY_ID,
-		secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-	},
-});
+function makeS3Client(endpointUrl: string | undefined): S3Client {
+	return new S3Client({
+		region: env.AWS_REGION,
+		...(endpointUrl && {
+			endpoint: endpointUrl,
+			forcePathStyle: true,
+		}),
+		requestChecksumCalculation: 'WHEN_REQUIRED',
+		responseChecksumValidation: 'WHEN_REQUIRED',
+		credentials: {
+			accessKeyId: env.AWS_ACCESS_KEY_ID,
+			secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+		},
+	});
+}
+
+const s3Ops = makeS3Client(env.AWS_ENDPOINT_URL);
+
+// Presigned URLs are resolved by the browser, so they must embed the host-reachable
+// address. In local dev this differs from the internal Docker hostname in AWS_ENDPOINT_URL.
+const s3Presign = makeS3Client(env.AWS_PRESIGN_ENDPOINT_URL ?? env.AWS_ENDPOINT_URL);
 
 /** `input` = originals / uploads; `output` = transcoded HLS, etc. */
 function bucket(which: 'input' | 'output'): string {
@@ -44,14 +52,14 @@ export async function generateUploadUrl(key: string, contentType: string): Promi
 		Key: key,
 		ContentType: contentType,
 	});
-	return getSignedUrl(s3, command, { expiresIn: UPLOAD_URL_EXPIRY_SECONDS });
+	return getSignedUrl(s3Presign, command, { expiresIn: UPLOAD_URL_EXPIRY_SECONDS });
 }
 
 export async function createMultipartUpload(
 	key: string,
 	contentType: string
 ): Promise<{ uploadId: string }> {
-	const response = await s3.send(
+	const response = await s3Ops.send(
 		new CreateMultipartUploadCommand({
 			Bucket: bucket('input'),
 			Key: key,
@@ -75,16 +83,16 @@ export async function generateUploadPartUrl(params: {
 		PartNumber: params.partNumber,
 		...(params.contentLength != null && { ContentLength: params.contentLength }),
 	});
-	return getSignedUrl(s3, command, { expiresIn: UPLOAD_URL_EXPIRY_SECONDS });
+	return getSignedUrl(s3Presign, command, { expiresIn: UPLOAD_URL_EXPIRY_SECONDS });
 }
 
-/** Lists parts via the SDK (not the browser). Browsers often cannot read ETag on PUT to S3 unless CORS exposes it. */
+/** Parts are listed server-side because browsers cannot reliably read the ETag header from a PUT response unless CORS exposes it. */
 async function listAllMultipartParts(key: string, uploadId: string) {
 	const parts: Array<{ PartNumber: number; ETag: string }> = [];
 	let partNumberMarker: string | undefined;
 
 	for (;;) {
-		const response = await s3.send(
+		const response = await s3Ops.send(
 			new ListPartsCommand({
 				Bucket: bucket('input'),
 				Key: key,
@@ -110,7 +118,7 @@ export async function completeMultipartUpload(params: { key: string; uploadId: s
 		throw new Error('No parts found for this multipart upload (upload may have failed or expired)');
 	}
 	listed.sort((a, b) => a.PartNumber - b.PartNumber);
-	await s3.send(
+	await s3Ops.send(
 		new CompleteMultipartUploadCommand({
 			Bucket: bucket('input'),
 			Key: params.key,
@@ -126,7 +134,7 @@ export async function abortMultipartUpload(params: {
 	key: string;
 	uploadId: string;
 }): Promise<void> {
-	await s3.send(
+	await s3Ops.send(
 		new AbortMultipartUploadCommand({
 			Bucket: bucket('input'),
 			Key: params.key,
@@ -154,10 +162,10 @@ export async function generateDownloadUrl(
 		Key: key,
 		ResponseContentDisposition: `attachment; filename="${encodeURIComponent(filename)}"`,
 	});
-	return getSignedUrl(s3, command, { expiresIn: DOWNLOAD_URL_EXPIRY_SECONDS });
+	return getSignedUrl(s3Presign, command, { expiresIn: DOWNLOAD_URL_EXPIRY_SECONDS });
 }
 
-/** Inline URL for viewing in browser (images, PDFs, videos, HLS). */
+/** Forces inline rendering in the browser rather than a file download. */
 export async function generateViewUrl(
 	key: string,
 	contentType?: string,
@@ -169,14 +177,14 @@ export async function generateViewUrl(
 		ResponseContentDisposition: 'inline',
 		...(contentType && { ResponseContentType: contentType }),
 	});
-	return getSignedUrl(s3, command, { expiresIn: DOWNLOAD_URL_EXPIRY_SECONDS });
+	return getSignedUrl(s3Presign, command, { expiresIn: DOWNLOAD_URL_EXPIRY_SECONDS });
 }
 
 export async function headObject(
 	key: string,
 	which: 'input' | 'output' = 'input'
 ): Promise<{ size: number; contentType: string | undefined }> {
-	const response = await s3.send(new HeadObjectCommand({ Bucket: bucket(which), Key: key }));
+	const response = await s3Ops.send(new HeadObjectCommand({ Bucket: bucket(which), Key: key }));
 	return { size: response.ContentLength ?? 0, contentType: response.ContentType };
 }
 
@@ -189,7 +197,7 @@ export async function deleteObjects(
 	const BATCH_SIZE = 1000;
 	for (let i = 0; i < keys.length; i += BATCH_SIZE) {
 		const batch = keys.slice(i, i + BATCH_SIZE);
-		await s3.send(
+		await s3Ops.send(
 			new DeleteObjectsCommand({
 				Bucket: bucket(which),
 				Delete: { Objects: batch.map((Key) => ({ Key })) },
@@ -207,7 +215,7 @@ export async function listObjectKeysByPrefix(
 	const bucketName = bucket(which);
 
 	for (;;) {
-		const response = await s3.send(
+		const response = await s3Ops.send(
 			new ListObjectsV2Command({
 				Bucket: bucketName,
 				Prefix: prefix,
@@ -231,4 +239,4 @@ export async function listObjectKeysByPrefix(
 	return keys;
 }
 
-export { s3 as s3Client };
+export { s3Ops as s3Client };

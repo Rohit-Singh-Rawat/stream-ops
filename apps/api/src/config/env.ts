@@ -4,10 +4,13 @@ const envSchema = z.object({
 	AWS_REGION: z.string(),
 	AWS_ACCESS_KEY_ID: z.string(),
 	AWS_SECRET_ACCESS_KEY: z.string(),
-	AWS_ENDPOINT_URL: z.string().url().optional(),
+	AWS_ENDPOINT_URL: z.url().optional(),
+	// Separate from AWS_ENDPOINT_URL because presigned URLs are resolved by the browser —
+	// in local dev the browser can't reach the internal Docker hostname used for server-side ops.
+	AWS_PRESIGN_ENDPOINT_URL: z.url().optional(),
 	INPUT_BUCKET: z.string().min(1),
 	OUTPUT_BUCKET: z.string().min(1),
-	QUEUE_URL: z.string().url(),
+	QUEUE_URL: z.url(),
 	PORT: z.coerce.number().default(4000),
 });
 

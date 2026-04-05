@@ -1,52 +1,133 @@
 services:
+
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: stream_ops
     ports:
-      - '5432:5432'
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stream_ops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: stream-ops
+      MINIO_ROOT_PASSWORD: stream-ops-secret
+      # Bucket-level CORS (mc cors set) is unreliable across MinIO versions;
+      # server-level env var is the stable alternative.
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 stream-ops stream-ops-secret &&
+        mc mb --ignore-existing local/stream-ops-input &&
+        mc mb --ignore-existing local/stream-ops-output &&
+        mc anonymous set download local/stream-ops-output
+      "
+
+  elasticmq:
+    image: softwaremill/elasticmq-native
+    ports:
+      - "9324:9324"
+    volumes:
+      - ./docker/elasticmq.conf:/opt/elasticmq.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- 'http://localhost:9324/?Action=ListQueues' | grep -q 'ListQueuesResponse' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   db-migrate:
-    image: oven/bun:1
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.migrate
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/stream_ops
-    volumes:
-      - ./:/repo
-    working_dir: /repo
-    command: sh -c "bun install && cd packages/db && bun install && bun run db:migrate"
 
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     depends_on:
-      - postgres
-      - db-migrate
-    env_file:
-      - ./apps/api/.env
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      elasticmq:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/stream_ops
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: stream-ops
+      AWS_SECRET_ACCESS_KEY: stream-ops-secret
+      AWS_ENDPOINT_URL: http://minio:9000
+      # Presigned URLs are resolved by the browser — must be the host-reachable address,
+      # not the internal Docker hostname used for server-side ops.
+      AWS_PRESIGN_ENDPOINT_URL: http://localhost:9000
+      INPUT_BUCKET: stream-ops-input
+      OUTPUT_BUCKET: stream-ops-output
+      QUEUE_URL: http://elasticmq:9324/queue/jobs
+      PORT: 4000
     ports:
-      - '4000:4000'
+      - "4000:4000"
 
   worker:
     build:
       context: .
-      dockerfile: services/worker/DockerFile
+      dockerfile: services/worker/Dockerfile
     depends_on:
-      - postgres
-      - db-migrate
-    env_file:
-      - ./services/worker/.env
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      elasticmq:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/stream_ops
-    restart: unless-stopped
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: stream-ops
+      AWS_SECRET_ACCESS_KEY: stream-ops-secret
+      AWS_ENDPOINT_URL: http://minio:9000
+      INPUT_BUCKET: stream-ops-input
+      OUTPUT_BUCKET: stream-ops-output
+      QUEUE_URL: http://elasticmq:9324/queue/jobs
+    command: ["bun", "run", "index.local.ts"]
+    restart: on-failure
 
   web:
     build:
@@ -55,10 +136,15 @@ services:
     depends_on:
       - api
     environment:
+      # Server-side (SSR/RSC) fetches run inside Docker — localhost would resolve to
+      # the web container itself, not the api service. API_BASE_URL overrides the base
+      # URL for those fetches; NEXT_PUBLIC_API_BASE_URL is what the browser uses.
+      API_BASE_URL: http://api:4000
       NEXT_PUBLIC_API_BASE_URL: http://localhost:4000
-      NEXT_PUBLIC_ASSET_BASE_URL: ${NEXT_PUBLIC_ASSET_BASE_URL}
+      NEXT_PUBLIC_ASSET_BASE_URL: http://localhost:9000/stream-ops-output
     ports:
-      - '3000:3000'
+      - "3000:3000"
 
 volumes:
   postgres_data: {}
+  minio_data: {}

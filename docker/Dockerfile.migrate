@@ -1,0 +1,14 @@
+FROM node:22-alpine
+
+WORKDIR /app
+
+# Only the migration runner and the generated SQL files are needed.
+# drizzle-kit (codegen) is not required at runtime — drizzle-orm's built-in
+# migrator reads the pre-generated files from the drizzle/ folder directly.
+COPY packages/db/migrate.ts ./
+COPY packages/db/drizzle/  ./drizzle/
+
+# "type": "module" is required so tsx treats the file as ESM and allows top-level await.
+RUN echo '{"type":"module"}' > package.json && npm install --no-save drizzle-orm pg tsx
+
+CMD ["npx", "tsx", "migrate.ts"]

@@ -8,10 +8,14 @@ function parseRemotePatterns(): NextConfig["images"] {
 
   try {
     const { protocol, hostname, port } = new URL(raw);
+    const proto = protocol.replace(":", "") as "https" | "http";
     return {
+      // Skip optimization for HTTP assets — Next.js image optimizer runs server-side
+      // inside Docker where localhost resolves to 127.0.0.1 (blocked as private IP).
+      unoptimized: proto === "http",
       remotePatterns: [
         {
-          protocol: protocol.replace(":", "") as "https" | "http",
+          protocol: proto,
           hostname,
           port: port || undefined,
           pathname: "/**",

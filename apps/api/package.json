@@ -14,6 +14,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1017.0",
     "@hono/zod-validator": "^0.7.6",
     "@stream-ops/db": "workspace:*",
+    "drizzle-orm": "^0.45.1",
     "@stream-ops/types": "workspace:*",
     "aws-sdk": "^2.1693.0",
     "hono": "^4.12.8",
