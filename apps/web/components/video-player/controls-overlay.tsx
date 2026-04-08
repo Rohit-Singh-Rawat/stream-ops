@@ -245,6 +245,9 @@ export function ControlsOverlay({
                 align="end"
                 side="top"
                 sideOffset={8}
+                // Portal into the player container so the menu is visible in fullscreen
+                // (the Fullscreen API only renders descendants of the fullscreen element).
+                container={containerRef.current}
                 className="min-w-36 border-white/10 bg-zinc-950/95 text-zinc-100 shadow-xl ring-white/10"
               >
                 <DropdownMenuGroup>

@@ -20,13 +20,17 @@ function sqsEndpoint(queueUrl: string): string | undefined {
 	return url.hostname.endsWith('.amazonaws.com') ? undefined : url.origin;
 }
 
+const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+
 const sqs = new SQSClient({
 	region: process.env.AWS_REGION ?? 'us-east-1',
 	endpoint: sqsEndpoint(QUEUE_URL),
-	credentials: {
-		accessKeyId: requireEnv('AWS_ACCESS_KEY_ID'),
-		secretAccessKey: requireEnv('AWS_SECRET_ACCESS_KEY'),
-	},
+	// Only inject credentials when present (local dev). In production ECS,
+	// the task IAM role is used via the SDK metadata credential provider.
+	...(accessKeyId && secretAccessKey && {
+		credentials: { accessKeyId, secretAccessKey },
+	}),
 });
 
 interface JobMessage {
@@ -73,7 +77,7 @@ async function poll(): Promise<void> {
 			new ReceiveMessageCommand({
 				QueueUrl: QUEUE_URL,
 				MaxNumberOfMessages: 1,
-				WaitTimeSeconds: 5,
+				WaitTimeSeconds: 20,
 			}),
 		);
 

@@ -37,6 +37,7 @@ export default function VideoPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [isMediaReady, setIsMediaReady] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [qualityOptions, setQualityOptions] = useState<QualityOption[]>([]);
   const [selectedQuality, setSelectedQuality] = useState<number>(-1);
   const hlsRef = useRef<Hls | null>(null);
@@ -50,6 +51,7 @@ export default function VideoPlayer({
     if (!video) return;
 
     setIsMediaReady(false);
+    setIsBuffering(false);
 
     const onLoaded = () => setIsMediaReady(true);
     const onError = () => setIsMediaReady(false);
@@ -106,7 +108,9 @@ export default function VideoPlayer({
     setSelectedQuality(quality);
     const hls = hlsRef.current;
     if (!hls) return;
-    hls.currentLevel = quality;
+    // nextLevel switches at the next segment boundary instead of flushing the
+    // current buffer immediately — playback continues uninterrupted during the switch.
+    hls.nextLevel = quality;
   }, []);
 
   // Handle Controls Visibility on Idle
@@ -150,6 +154,26 @@ export default function VideoPlayer({
       video.removeEventListener("pause", onPause);
     };
   }, [showControls]);
+
+  // Track stall state so the buffering spinner can be shown/hidden
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onWaiting = () => setIsBuffering(true);
+    const onPlaying = () => setIsBuffering(false);
+    const onCanPlay = () => setIsBuffering(false);
+
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("canplay", onCanPlay);
+
+    return () => {
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("canplay", onCanPlay);
+    };
+  }, []);
 
   // Keyboard accessibility
   const handleKeyDown = useCallback(
@@ -227,6 +251,12 @@ export default function VideoPlayer({
           toggleFullscreen();
         }}
       />
+
+      {isBuffering && isMediaReady && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+          <div className="w-12 h-12 rounded-full border-4 border-white/20 border-t-white animate-spin" />
+        </div>
+      )}
 
       <ControlsOverlay
         videoRef={videoRef}

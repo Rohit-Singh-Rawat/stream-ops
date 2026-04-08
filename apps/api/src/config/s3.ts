@@ -26,12 +26,16 @@ function makeS3Client(endpointUrl: string | undefined): S3Client {
 			endpoint: endpointUrl,
 			forcePathStyle: true,
 		}),
+		// Omitting credentials lets the SDK fall through to the ECS task IAM role.
+		...(env.AWS_ACCESS_KEY_ID &&
+			env.AWS_SECRET_ACCESS_KEY && {
+				credentials: {
+					accessKeyId: env.AWS_ACCESS_KEY_ID,
+					secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+				},
+			}),
 		requestChecksumCalculation: 'WHEN_REQUIRED',
 		responseChecksumValidation: 'WHEN_REQUIRED',
-		credentials: {
-			accessKeyId: env.AWS_ACCESS_KEY_ID,
-			secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-		},
 	});
 }
 

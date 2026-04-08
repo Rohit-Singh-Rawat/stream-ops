@@ -68,19 +68,21 @@ function extensionFromKeyBasename(key: string): string | null {
 	return `.${base.slice(dot + 1).toLowerCase()}`;
 }
 
+const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+
 const s3 = new S3Client({
 	region: process.env.AWS_REGION,
 	...(process.env.AWS_ENDPOINT_URL && {
 		endpoint: process.env.AWS_ENDPOINT_URL,
 		forcePathStyle: true,
 	}),
-	...(!process.env.AWS_ENDPOINT_URL && { forcePathStyle: true }),
+	// Omitting credentials lets the SDK fall through to the ECS task IAM role.
+	...(accessKeyId && secretAccessKey && {
+		credentials: { accessKeyId, secretAccessKey },
+	}),
 	requestChecksumCalculation: RequestChecksumCalculation.WHEN_REQUIRED,
 	responseChecksumValidation: ResponseChecksumValidation.WHEN_REQUIRED,
-	credentials: {
-		accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-		secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-	},
 });
 
 const UPLOAD_CONCURRENCY = 8;

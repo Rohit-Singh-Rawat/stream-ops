@@ -5,7 +5,8 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "dev:db": "docker compose up -d postgres db-migrate && turbo run dev --filter=!@stream-ops/worker",
-    "docker:db":"docker compose up -d postgres db-migrate",
+    "docker:db": "docker compose up -d postgres db-migrate",
+    "dev:docker": "docker compose up -d",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types"
@@ -24,5 +25,8 @@
     "apps/*",
     "packages/*",
     "services/*"
-  ]
+  ],
+  "dependencies": {
+    "aws-cdk": "^2.1117.0"
+  }
 }

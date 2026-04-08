@@ -2,8 +2,9 @@ import { z } from 'zod';
 
 const envSchema = z.object({
 	AWS_REGION: z.string(),
-	AWS_ACCESS_KEY_ID: z.string(),
-	AWS_SECRET_ACCESS_KEY: z.string(),
+	// Optional in production — ECS task IAM role is used instead of explicit credentials.
+	AWS_ACCESS_KEY_ID: z.string().optional(),
+	AWS_SECRET_ACCESS_KEY: z.string().optional(),
 	AWS_ENDPOINT_URL: z.url().optional(),
 	// Separate from AWS_ENDPOINT_URL because presigned URLs are resolved by the browser —
 	// in local dev the browser can't reach the internal Docker hostname used for server-side ops.

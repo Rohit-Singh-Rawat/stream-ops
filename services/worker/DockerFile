@@ -1,24 +1,31 @@
-FROM oven/bun:1.3.9
-
-RUN apt-get update && \
-	apt-get install -y --no-install-recommends ffmpeg && \
-	rm -rf /var/lib/apt/lists/*
+FROM oven/bun:1.3.9 AS deps
 
 WORKDIR /repo
 
-COPY package.json ./
-COPY packages/db/package.json ./packages/db/
+COPY package.json bun.lock ./
+COPY packages/db/package.json     ./packages/db/
 COPY packages/logger/package.json ./packages/logger/
-COPY packages/types/package.json ./packages/types/
-COPY apps/orchestrator/package.json ./apps/orchestrator/
-COPY apps/web/package.json ./apps/web/
-COPY apps/api/package.json ./apps/api/
 COPY services/worker/package.json ./services/worker/
+# Stub unused workspace members so bun doesn't fail workspace resolution
+COPY packages/types/package.json  ./packages/types/
+COPY apps/api/package.json        ./apps/api/
+COPY apps/web/package.json        ./apps/web/
+COPY apps/orchestrator/package.json ./apps/orchestrator/
 
-# No bun.lock: resolve from package.json ranges (--no-save avoids writing a lockfile in the image).
-RUN bun install --production --no-save
+RUN bun install --frozen-lockfile --production
 
-COPY packages/db ./packages/db
+# ---- runner ----
+FROM oven/bun:1.3.9
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /repo
+
+COPY --from=deps /repo/node_modules ./node_modules
+
+COPY packages/db     ./packages/db
 COPY packages/logger ./packages/logger
 COPY services/worker ./services/worker
 
