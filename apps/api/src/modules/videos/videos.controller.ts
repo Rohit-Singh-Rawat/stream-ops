@@ -22,14 +22,16 @@ const listVideosQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
+const SUPPORTED_VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
+
 const createVideoSchema = z.object({
   name: z.string().min(1),
   size: z.number().min(1),
   type: z
     .string()
     .min(1)
-    .refine((value) => value.startsWith("video/"), {
-      message: "type must be a video/* MIME type",
+    .refine((value) => SUPPORTED_VIDEO_TYPES.has(value.toLowerCase()), {
+      message: "type must be one of: video/mp4, video/webm",
     }),
 });
 

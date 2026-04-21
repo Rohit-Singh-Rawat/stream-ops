@@ -11,14 +11,16 @@ const envSchema = z.object({
 	AWS_PRESIGN_ENDPOINT_URL: z.url().optional(),
 	INPUT_BUCKET: z.string().min(1),
 	OUTPUT_BUCKET: z.string().min(1),
-	QUEUE_URL: z.url(),
+	// Not set in production — S3 event notifications trigger the Lambda directly.
+	// Set locally to point at ElasticMQ so the worker poll loop receives jobs.
+	QUEUE_URL: z.url().optional(),
 	PORT: z.coerce.number().default(4000),
 });
 
 const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
-	console.error('❌ Invalid environment variables:', parsed.error.flatten().fieldErrors);
+	console.error('❌ Invalid environment variables:', z.flattenError(parsed.error).fieldErrors);
 	throw new Error('Invalid environment variables');
 }
 

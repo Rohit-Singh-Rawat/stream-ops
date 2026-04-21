@@ -93,6 +93,7 @@ function UploadProgress({ upload }: { upload: UploadItem }) {
 export function UploadPanel() {
   const { activeUpload, handleFilesDrop, isUploading } = useVideoUpload();
   const [isDragging, setIsDragging] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
@@ -109,13 +110,15 @@ export function UploadPanel() {
     event.preventDefault();
     setIsDragging(false);
     if (!isUploading && event.dataTransfer.files.length > 0) {
-      handleFilesDrop(event.dataTransfer.files);
+      const result = handleFilesDrop(event.dataTransfer.files);
+      setValidationError(result.ok ? null : result.message);
     }
   }, [isUploading, handleFilesDrop]);
 
   const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files?.length) {
-      handleFilesDrop(event.target.files);
+      const result = handleFilesDrop(event.target.files);
+      setValidationError(result.ok ? null : result.message);
     }
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [handleFilesDrop]);
@@ -136,7 +139,11 @@ export function UploadPanel() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => !isUploading && fileInputRef.current?.click()}
+        onClick={() => {
+          if (isUploading) return;
+          setValidationError(null);
+          fileInputRef.current?.click();
+        }}
         onKeyDown={handleKeyDown}
         className={cn(
           "group flex min-h-[400px] cursor-pointer flex-col items-center justify-center rounded-md transition-all duration-300 ease-out",
@@ -196,6 +203,9 @@ export function UploadPanel() {
       </div>
 
       {activeUpload && <UploadProgress upload={activeUpload} />}
+      {validationError ? (
+        <p className="mt-4 text-sm text-red-300">{validationError}</p>
+      ) : null}
     </div>
   );
 }

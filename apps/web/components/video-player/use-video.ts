@@ -57,7 +57,6 @@ export function useVideo(
     video.addEventListener("durationchange", handleDurationChange);
     video.addEventListener("loadedmetadata", handleDurationChange);
 
-    // Initial read
     setState({
       isPlaying: !video.paused,
       isMuted: video.muted || video.volume === 0,

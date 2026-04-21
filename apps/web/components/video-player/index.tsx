@@ -41,11 +41,22 @@ export default function VideoPlayer({
   const [qualityOptions, setQualityOptions] = useState<QualityOption[]>([]);
   const [selectedQuality, setSelectedQuality] = useState<number>(-1);
   const hlsRef = useRef<Hls | null>(null);
-  const hideControlsTimeoutRef = useRef<NodeJS.Timeout>(null);
-  const { togglePlay, toggleMute, toggleFullscreen, skip, isFullscreen } =
-    useVideo(videoRef, containerRef);
+  const hideControlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const {
+    isPlaying,
+    isMuted,
+    volume,
+    duration,
+    isFullscreen,
+    togglePlay,
+    toggleMute,
+    setVolume,
+    toggleFullscreen,
+    skip,
+  } = useVideo(videoRef, containerRef);
 
-  // Initialize HLS
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -113,14 +124,12 @@ export default function VideoPlayer({
     hls.nextLevel = quality;
   }, []);
 
-  // Handle Controls Visibility on Idle
   const showControls = useCallback(() => {
     setIsControlsVisible(true);
     if (hideControlsTimeoutRef.current) {
       clearTimeout(hideControlsTimeoutRef.current);
     }
 
-    // Don't auto-hide if paused
     if (videoRef.current?.paused) return;
 
     hideControlsTimeoutRef.current = setTimeout(() => {
@@ -138,7 +147,6 @@ export default function VideoPlayer({
     }
   }, []);
 
-  // Sync controls visibility with play state
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -155,7 +163,6 @@ export default function VideoPlayer({
     };
   }, [showControls]);
 
-  // Track stall state so the buffering spinner can be shown/hidden
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -175,12 +182,10 @@ export default function VideoPlayer({
     };
   }, []);
 
-  // Keyboard accessibility
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       showControls();
 
-      // Ignore if target is an input or button already handling it
       if (["INPUT", "BUTTON"].includes((e.target as HTMLElement).tagName)) {
         return;
       }
@@ -252,16 +257,21 @@ export default function VideoPlayer({
         }}
       />
 
-      {isBuffering && isMediaReady && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
-          <div className="w-12 h-12 rounded-full border-4 border-white/20 border-t-white animate-spin" />
-        </div>
-      )}
-
       <ControlsOverlay
         videoRef={videoRef}
         containerRef={containerRef}
         isControlsVisible={isControlsVisible}
+        isBuffering={isBuffering && isMediaReady}
+        isPlaying={isPlaying}
+        isMuted={isMuted}
+        volume={volume}
+        isFullscreen={isFullscreen}
+        duration={duration}
+        togglePlay={togglePlay}
+        toggleMute={toggleMute}
+        toggleFullscreen={toggleFullscreen}
+        skip={skip}
+        setVolume={setVolume}
         title={title}
         description={description}
         vttUrl={vttUrl}

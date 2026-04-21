@@ -1,159 +1,153 @@
-# Turborepo starter
+# stream-ops
 
-This Turborepo starter is maintained by the Turborepo core team.
+![License](https://img.shields.io/badge/license-MIT-blue)
+**Stack:** Bun · Next.js 15 · Hono · PostgreSQL · FFmpeg · AWS CDK
 
-## Using this example
+A self-hosted video streaming platform. Upload a video, get back an adaptive HLS stream at multiple quality levels — with a poster thumbnail and a custom web player.
 
-Run the following command:
+## Overview
 
-```sh
-npx create-turbo@latest
+stream-ops lets you upload MP4 or WebM videos through a web UI, then automatically transcodes them into HLS format (1080p / 720p / 480p) using FFmpeg. The resulting stream and poster are served through a CDN-backed player. Locally, everything runs in Docker Compose with MinIO and ElasticMQ as AWS stand-ins. In production the same workload runs on ECS Fargate, Aurora Serverless, S3, and CloudFront.
+
+## Architecture
+
+### Development (Docker Compose)
+
+```mermaid
+graph LR
+    B[Browser]
+    A["API :4000"]
+    M["MinIO :9000\nS3-compatible"]
+    E["ElasticMQ :9324\nSQS-compatible"]
+    W["Worker\nFFmpeg"]
+    P[("PostgreSQL :5432")]
+
+    B -->|"① create video"| A
+    A -->|"② presigned URLs"| B
+    B -->|"③ PUT chunks"| M
+    B -->|"④ complete upload"| A
+    A -->|"⑤ enqueue job"| E
+    E -->|"⑥ poll"| W
+    W -->|"⑦ download source"| M
+    W -->|"⑧ HLS + poster"| M
+    W -->|"⑨ update status"| P
+    A <-->|"metadata"| P
+    B -->|"⑩ stream HLS"| M
 ```
 
-## What's inside?
+### Production (AWS)
 
-This Turborepo includes the following packages/apps:
+```mermaid
+graph TD
+    B[Browser]
+    CF["CloudFront CDN"]
+    ALB_W["ALB — Web"]
+    ALB_A["ALB — API"]
+    ECS_A["ECS Fargate\nHono API"]
+    ECS_W["ECS Fargate\nNext.js"]
+    S3["S3"]
+    SQS["SQS"]
+    L["Lambda\nOrchestrator"]
+    ECS_WK["ECS Fargate\nFFmpeg Worker"]
+    DB[("Aurora Serverless v2")]
 
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+    B --> ALB_W --> ECS_W
+    B -->|"API calls"| ALB_A --> ECS_A
+    ECS_A -->|"presigned URLs"| S3
+    B -->|"PUT chunks"| S3
+    S3 -->|"upload event"| SQS --> L -->|"RunTask"| ECS_WK
+    ECS_WK -->|"download → transcode → upload"| S3
+    ECS_WK --> DB
+    ECS_A <--> DB
+    S3 --> CF
+    B -->|"stream HLS"| CF
 ```
 
-Without global `turbo`, use your package manager:
+> Detailed diagram with VPC, subnets, security groups, IAM roles, and port map: [`docs/architecture.md`](docs/architecture.md)
 
-```sh
-cd my-turborepo
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
+## Monorepo Layout
+
+| Path | What it is | README |
+|------|-----------|--------|
+| `apps/api` | Hono REST API — upload coordination, metadata, job dispatch | [→](apps/api/README.md) |
+| `apps/web` | Next.js 15 frontend — upload UI, HLS player, video library | [→](apps/web/README.md) |
+| `apps/orchestrator` | Lambda handler — S3 events → ECS RunTask (production) | [→](apps/orchestrator/README.md) |
+| `services/worker` | FFmpeg transcoding worker — HLS pipeline, poster generation | [→](services/worker/README.md) |
+| `infra` | AWS CDK stack — ECS Fargate, Aurora, SQS, S3, CloudFront | [→](infra/README.md) |
+| `packages/db` | Drizzle ORM schema and client (shared) | [→](packages/db/README.md) |
+| `packages/types` | Shared TypeScript types | [→](packages/types/README.md) |
+| `packages/logger` | Structured JSON logger (shared) | [→](packages/logger/README.md) |
+
+## Quickstart (Local Dev)
+
+**Prerequisites:** [Bun ≥ 1.3.9](https://bun.sh) · Docker
+
+```bash
+# 1. Clone
+git clone <repo-url> stream-ops && cd stream-ops
+
+# 2. Install dependencies
+bun install
+
+# 3. Start the full local stack (postgres, minio, elasticmq, api, worker, web)
+docker compose up -d
+
+# 4. Open the app
+open http://localhost:3000
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+MinIO console (bucket browser): http://localhost:9001  
+API health check: http://localhost:4000
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+> To run with hot-reload outside Docker (faster iteration):
+> ```bash
+> docker compose up -d postgres db-migrate minio minio-init elasticmq   # infrastructure only
+> cp .env.local.example .env.local
+> bun run dev             # start api + web with Turbo watch
+> ```
+> Note: `bun run dev:db` starts postgres + migrations and then launches Turbo dev automatically — it does not start MinIO or ElasticMQ. Use the explicit `docker compose up -d` command above if you need the full infrastructure.
 
-```sh
-turbo build --filter=docs
+## Environment Variables
+
+Two templates are provided:
+
+| File | Purpose |
+|------|---------|
+| `.env.example` | Production — AWS credentials, bucket names, database URL |
+| `.env.local.example` | Local dev — pre-filled values that match `docker-compose.yml` |
+
+Copy the appropriate file, rename it (remove `.example`), and fill in any blanks. **Never commit a filled-in copy.**
+
+## Scripts
+
+Run from the monorepo root with `bun run <script>`:
+
+| Script | What it does |
+|--------|-------------|
+| `dev` | Start all apps in watch mode (Turbo) |
+| `dev:db` | Start postgres + run DB migrations in Docker, then start all apps except worker (Turbo watch) |
+| `dev:docker` | Start the full stack in Docker (`docker compose up -d`) |
+| `build` | Build all apps and packages (Turbo) |
+| `lint` | ESLint across all packages |
+| `format` | Prettier format all `*.ts` / `*.tsx` / `*.md` files |
+| `check-types` | TypeScript type-check across all packages |
+
+## Deployment (AWS)
+
+Deployment uses AWS CDK from the `infra/` directory. It is a two-pass process because the web image must be built with the API URL baked in as a build arg.
+
+```bash
+# Pass 1 — bootstrap (once per AWS account/region) + first deploy
+cd infra
+npx cdk bootstrap aws://ACCOUNT_ID/REGION
+bun run deploy
+
+# Capture outputs from CloudFormation:
+# ApiUrl   → the ALB DNS for the API
+# AssetBaseUrl → the CloudFront URL for assets
+
+# Pass 2 — set the captured URLs in infra/bin/app.ts, then redeploy
+bun run deploy
 ```
 
-Without global `turbo`:
-
-```sh
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+See [`infra/README.md`](infra/README.md) for full configuration options and construct details.

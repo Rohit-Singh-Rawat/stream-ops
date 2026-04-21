@@ -26,13 +26,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { ProgressBar } from "./progress-bar";
-import { useVideo } from "./use-video";
 import { formatTime } from "./utils";
 
 interface ControlsProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   containerRef: React.RefObject<HTMLDivElement | null>;
   isControlsVisible: boolean;
+  isBuffering: boolean;
+  isPlaying: boolean;
+  isMuted: boolean;
+  volume: number;
+  isFullscreen: boolean;
+  duration: number;
+  togglePlay: () => void;
+  toggleMute: () => void;
+  toggleFullscreen: () => void;
+  skip: (amount: number) => void;
+  setVolume: (value: number) => void;
   title?: string;
   description?: string;
   vttUrl?: string;
@@ -47,6 +57,17 @@ export function ControlsOverlay({
   videoRef,
   containerRef,
   isControlsVisible,
+  isBuffering,
+  isPlaying,
+  isMuted,
+  volume,
+  isFullscreen,
+  duration,
+  togglePlay,
+  toggleMute,
+  toggleFullscreen,
+  skip,
+  setVolume,
   title,
   description,
   vttUrl,
@@ -56,19 +77,6 @@ export function ControlsOverlay({
   selectedQuality,
   onQualityChange,
 }: ControlsProps) {
-  const {
-    isPlaying,
-    isMuted,
-    volume,
-    isFullscreen,
-    duration,
-    togglePlay,
-    toggleMute,
-    toggleFullscreen,
-    skip,
-    setVolume,
-  } = useVideo(videoRef, containerRef);
-
   const [currentTime, setCurrentTime] = useState(0);
 
   useEffect(() => {
@@ -123,10 +131,23 @@ export function ControlsOverlay({
             e.stopPropagation();
             togglePlay();
           }}
-          className="pointer-events-auto cursor-pointer text-white hover:scale-110 hover:text-primary transition bg-black/40 backdrop-blur-sm p-4 rounded-full border border-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className={cn(
+            "pointer-events-auto text-white transition bg-black/40 backdrop-blur-sm p-4 rounded-full border border-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            isBuffering
+              ? "cursor-wait"
+              : "cursor-pointer hover:scale-110 hover:text-primary",
+          )}
           aria-label={isPlaying ? "Pause" : "Play"}
+          disabled={isBuffering}
         >
-          <HugeiconsIcon icon={isPlaying ? PauseIcon : PlayIcon} size={48} />
+          {isBuffering ? (
+            <span
+              className="block size-12 rounded-full border-4 border-white/25 border-t-white animate-spin"
+              aria-hidden="true"
+            />
+          ) : (
+            <HugeiconsIcon icon={isPlaying ? PauseIcon : PlayIcon} size={48} />
+          )}
         </button>
 
         <button
@@ -145,7 +166,7 @@ export function ControlsOverlay({
       <div className="w-full bg-linear-to-t from-black/90 via-black/40 to-transparent p-4 md:px-8 pb-6 pointer-events-auto">
         <div className="mb-4">
           {title && (
-            <h2 className="text-xl font-bold text-white mb-1 shadow-black drop-shadow-md">
+            <h2 className="text-xl font-normal text-white mb-1 shadow-black drop-shadow-md">
               {title}
             </h2>
           )}

@@ -38,13 +38,9 @@ export function parseVtt(vtt: string, baseUrl: string): Cue[] {
 
       let imageUrl = match[1];
 
-      // Automatically resolves relative paths (sprite.jpg), absolute paths (/videos/...),
-      // or full URLs perfectly against the VTT's location.
       try {
         imageUrl = new URL(imageUrl, baseUrl).href;
-      } catch (_error) {
-        // Fallback if URL parsing fails for some reason
-      }
+      } catch (_error) {}
 
       cues.push({
         start: parseTimestamp(startStr),

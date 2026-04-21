@@ -1,15 +1,22 @@
-# types
+# @stream-ops/types
 
-To install dependencies:
+Shared TypeScript types used by `apps/api`, `apps/web`, and `services/worker`. No runtime code — types only.
 
-```bash
-bun install
+## Key Types
+
+| Type | Description |
+|------|-------------|
+| `VideoStatus` | Union: `"created" \| "uploading" \| "uploaded" \| "queued" \| "processing" \| "ready" \| "failed"` |
+| `VideoSummary` | Video record shape returned by the API list/detail endpoints |
+| `VideoRendition` | HLS rendition: `name`, `height`, `bitrate` |
+| `VideoCollectionSummary` | Aggregate counts: `total`, `ready`, `processing`, `failed` |
+| `ListVideosResponse` | `{ videos: VideoSummary[], summary: VideoCollectionSummary }` |
+| `GetVideoResponse` | `{ video: VideoSummary, renditions: VideoRendition[] }` |
+
+## Usage
+
+```ts
+import type { VideoSummary, VideoStatus, GetVideoResponse } from '@stream-ops/types'
 ```
 
-To run:
-
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.3.9. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+No `DATABASE_URL` or runtime dependencies required.

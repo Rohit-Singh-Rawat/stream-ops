@@ -38,9 +38,20 @@ WORKDIR /repo
 
 ENV NODE_ENV=production
 
-COPY --from=deps    /repo/node_modules        ./node_modules
-COPY --from=builder /repo/apps/web/.next      ./apps/web/.next
-COPY --from=builder /repo/apps/web/package.json ./apps/web/package.json
+COPY package.json bun.lock ./
+COPY apps/web/package.json       ./apps/web/
+COPY packages/types/package.json ./packages/types/
+COPY packages/db/package.json     ./packages/db/
+COPY packages/logger/package.json ./packages/logger/
+COPY services/worker/package.json ./services/worker/
+COPY apps/api/package.json        ./apps/api/
+COPY apps/orchestrator/package.json ./apps/orchestrator/
+
+RUN bun install --frozen-lockfile
+
+COPY apps/web ./apps/web
+COPY packages/types ./packages/types
+COPY --from=builder /repo/apps/web/.next ./apps/web/.next
 
 WORKDIR /repo/apps/web
 

@@ -1,16 +1,25 @@
 import { ApiError, type JsonRequestOptions, jsonRequest } from "@/lib/http";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
-
 type RequestOptions = Omit<JsonRequestOptions, "method">;
+
+function getApiBaseUrl() {
+  if (typeof window === "undefined") {
+    return (
+      process.env.API_BASE_URL ||
+      process.env.NEXT_PUBLIC_API_BASE_URL ||
+      "http://localhost:4000"
+    );
+  }
+
+  return process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
+}
 
 function request<T>(
   endpoint: string,
   method: NonNullable<RequestInit["method"]>,
   options: RequestOptions = {},
 ): Promise<T> {
-  return jsonRequest<T>(API_BASE_URL, endpoint, {
+  return jsonRequest<T>(getApiBaseUrl(), endpoint, {
     ...options,
     method,
   });

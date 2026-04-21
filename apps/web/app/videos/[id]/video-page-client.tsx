@@ -5,8 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import api, { ApiError } from "@/lib/api";
+import VideoPlayer from "@/components/video-player";
 import { formatFileSize, formatDateTime } from "@/lib/videos";
-import VideoPlayer from "@/components/videoPlayer";
 
 interface VideoPageClientProps {
   videoId: string;
@@ -136,7 +136,10 @@ export function VideoPageClient({
 
   return (
     <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 md:py-12">
-      <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-zinc-950/90 ring-1 ring-white/5">
+      <div
+        className="relative aspect-video w-full overflow-hidden rounded-lg bg-zinc-950/90 ring-1 ring-white/5"
+        style={{ viewTransitionName: `video-card-${videoId}` }}
+      >
         {isReady && playbackUrl ? (
           <VideoPlayer
             src={playbackUrl}

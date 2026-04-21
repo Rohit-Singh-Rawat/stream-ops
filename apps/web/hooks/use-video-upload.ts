@@ -6,6 +6,22 @@ import { useCallback, useTransition } from "react";
 import { uploadFile } from "@/lib/file-upload";
 import { uploadStore, useUploads } from "@/store/uploads";
 
+const ALLOWED_VIDEO_MIME_TYPES = new Set(["video/mp4", "video/webm"]);
+const ALLOWED_VIDEO_EXTENSIONS = [".mp4", ".webm"];
+
+type DropValidationResult =
+  | { ok: true }
+  | { ok: false; message: string };
+
+function isSupportedVideoFile(file: File): boolean {
+  if (ALLOWED_VIDEO_MIME_TYPES.has(file.type)) {
+    return true;
+  }
+
+  const normalizedName = file.name.toLowerCase();
+  return ALLOWED_VIDEO_EXTENSIONS.some((ext) => normalizedName.endsWith(ext));
+}
+
 export function useVideoUpload() {
   const uploads = useUploads();
   const activeUpload =
@@ -34,15 +50,20 @@ export function useVideoUpload() {
   });
 
   const handleFilesDrop = useCallback(
-    (files: FileList) => {
+    (files: FileList): DropValidationResult => {
       const file = files[0];
       if (!file) {
-        return;
+        return { ok: false, message: "No file selected." };
+      }
+
+      if (!isSupportedVideoFile(file)) {
+        return { ok: false, message: "Only MP4 and WebM files are supported." };
       }
 
       const tempId = crypto.randomUUID();
       uploadStore.add({ id: tempId, name: file.name, size: file.size });
       uploadMutation.mutate({ file, tempId });
+      return { ok: true };
     },
     [uploadMutation],
   );

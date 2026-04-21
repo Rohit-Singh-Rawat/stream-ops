@@ -53,6 +53,23 @@ type UploadSession = {
   multipart?: { uploadId: string };
 };
 
+function resolveSupportedVideoMimeType(file: File): "video/mp4" | "video/webm" {
+  const normalizedMime = file.type.toLowerCase();
+  if (normalizedMime === "video/mp4" || normalizedMime === "video/webm") {
+    return normalizedMime;
+  }
+
+  const normalizedName = file.name.toLowerCase();
+  if (normalizedName.endsWith(".mp4")) {
+    return "video/mp4";
+  }
+  if (normalizedName.endsWith(".webm")) {
+    return "video/webm";
+  }
+
+  throw new Error("Unsupported file type. Only MP4 and WebM files are allowed.");
+}
+
 function uploadPartOnce(params: {
   url: string;
   body: ArrayBuffer;
@@ -167,7 +184,7 @@ export async function uploadFile(
   let session: UploadSession | undefined;
 
   try {
-    const mime = file.type?.startsWith("video/") ? file.type : "video/mp4";
+    const mime = resolveSupportedVideoMimeType(file);
 
     const { video: created } = await api.post<CreateVideoResponse>(
       "/api/videos",
@@ -189,7 +206,7 @@ export async function uploadFile(
       await uploadPartWithRetry({
         url: uploadDesc.uploadUrl,
         body: await file.arrayBuffer(),
-        contentType: file.type || "application/octet-stream",
+        contentType: mime,
         signal: abortController.signal,
         onProgress: (loaded) => onProgress?.(loaded),
       });
